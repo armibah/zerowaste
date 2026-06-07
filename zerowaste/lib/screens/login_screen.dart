@@ -24,8 +24,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final _nameController = TextEditingController(text: 'Nature Friend');
   final _emailController = TextEditingController(text: 'nature@example.com');
   final _passwordController = TextEditingController(text: 'ecodiscover');
+  final _confirmPasswordController = TextEditingController(text: 'ecodiscover');
 
-  bool _creatingAccount = false;
+  bool _creatingAccount = true;
   bool _showPassword = false;
   bool _loading = false;
 
@@ -34,6 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -87,9 +89,9 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final title = _creatingAccount ? 'Create Account' : 'Welcome Back';
+    final title = _creatingAccount ? 'Join the Movement' : 'Welcome Back';
     final subtitle = _creatingAccount
-        ? 'Start your journey to zero waste'
+        ? 'Embark on your journey toward a more conscious and zero-waste lifestyle.'
         : 'Continue your journey to zero waste';
 
     return Scaffold(
@@ -212,15 +214,35 @@ class _LoginScreenState extends State<LoginScreen> {
                               return null;
                             },
                           ),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: () => _showMessage(
-                                'Use Supabase Auth email recovery for production.',
+                          if (_creatingAccount) ...[
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller: _confirmPasswordController,
+                              obscureText: !_showPassword,
+                              textInputAction: TextInputAction.done,
+                              onFieldSubmitted: (_) => _submit(),
+                              decoration: const InputDecoration(
+                                labelText: 'Confirm',
+                                prefixIcon: Icon(Icons.lock_outline),
                               ),
-                              child: const Text('Forgot password?'),
+                              validator: (value) {
+                                if (value != _passwordController.text) {
+                                  return 'Passwords must match';
+                                }
+                                return null;
+                              },
                             ),
-                          ),
+                          ],
+                          if (!_creatingAccount)
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: () => _showMessage(
+                                  'Use Supabase Auth email recovery for production.',
+                                ),
+                                child: const Text('Forgot password?'),
+                              ),
+                            ),
                           const SizedBox(height: 6),
                           FilledButton(
                             onPressed: _loading ? null : _submit,
@@ -287,8 +309,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     child: Text(
                       _creatingAccount
-                          ? 'Already have an account? Login'
-                          : 'New here? Create an account',
+                                  ? 'Already have an account? Log in'
+                                  : 'New here? Create an account',
                     ),
                   ),
                 ],

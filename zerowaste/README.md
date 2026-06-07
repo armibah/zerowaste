@@ -6,8 +6,16 @@ brands, zero-waste products, and practical low-waste tips.
 ## What is included
 
 - Flutter Material 3 onboarding, login/sign-up, and discovery dashboard.
+- Multi-tab mobile UI matching the provided EcoDiscover mockups:
+  - Join the Movement sign-up
+  - Home dashboard
+  - Product marketplace grid
+  - Product detail page
+  - Impact tracker
+  - Profile
 - Supabase Auth integration for email/password accounts.
 - Supabase Postgres integration for brands, products, tips, and user favorites.
+- Supabase impact tracker table with a trigger that creates default user stats.
 - Demo mode that works without Supabase keys for local UI development.
 - Database schema and seed data in [`supabase/schema.sql`](supabase/schema.sql).
 
@@ -47,9 +55,19 @@ The schema creates these tables:
 - `eco_products`
 - `eco_tips`
 - `user_favorites`
+- `impact_snapshots`
 
 Row level security is enabled. Brands, products, and tips are readable by
-anonymous and authenticated users. Favorites are private to the signed-in user.
+anonymous and authenticated users. Favorites and impact snapshots are private to
+the signed-in user.
+
+## Main Flutter files
+
+- `lib/main.dart` initializes Supabase and switches between live/demo services.
+- `lib/screens/login_screen.dart` contains the sign-up and login UI.
+- `lib/screens/home_screen.dart` contains the home, product, tracker,
+  marketplace, profile, and product detail designs.
+- `lib/services/eco_repository.dart` contains Supabase queries and demo data.
 
 ## Tests and checks
 

@@ -24,6 +24,13 @@ create table if not exists public.eco_products (
   impact_label text not null default 'Low waste',
   image_url text not null default '',
   tags text[] not null default '{}',
+  price numeric(10, 2) not null default 0,
+  previous_price numeric(10, 2),
+  eco_score integer not null default 80 check (eco_score between 0 and 100),
+  co2_saved_kg numeric(10, 2) not null default 0,
+  water_saved_liters integer not null default 0,
+  material text not null default 'Sustainable materials',
+  shipping_note text not null default 'Eco-conscious shipping available',
   created_at timestamptz not null default now()
 );
 
@@ -44,10 +51,32 @@ create table if not exists public.user_favorites (
   primary key (user_id, product_id)
 );
 
+create table if not exists public.impact_snapshots (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  plastic_waste_reduction integer not null default 70,
+  food_waste_reduction integer not null default 45,
+  packaging_reduction integer not null default 90,
+  streak_days integer not null default 15,
+  eco_score integer not null default 82 check (eco_score between 0 and 100),
+  weekly_progress integer[] not null default array[18, 22, 38, 30, 52, 41, 64],
+  activities jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.eco_products
+  add column if not exists price numeric(10, 2) not null default 0,
+  add column if not exists previous_price numeric(10, 2),
+  add column if not exists eco_score integer not null default 80,
+  add column if not exists co2_saved_kg numeric(10, 2) not null default 0,
+  add column if not exists water_saved_liters integer not null default 0,
+  add column if not exists material text not null default 'Sustainable materials',
+  add column if not exists shipping_note text not null default 'Eco-conscious shipping available';
+
 alter table public.eco_brands enable row level security;
 alter table public.eco_products enable row level security;
 alter table public.eco_tips enable row level security;
 alter table public.user_favorites enable row level security;
+alter table public.impact_snapshots enable row level security;
 
 drop policy if exists "Eco brands are readable by everyone" on public.eco_brands;
 create policy "Eco brands are readable by everyone"
@@ -85,6 +114,79 @@ create policy "Users can remove their own favorites"
   to authenticated
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can read their own impact snapshot" on public.impact_snapshots;
+create policy "Users can read their own impact snapshot"
+  on public.impact_snapshots for select
+  to authenticated
+  using (auth.uid() = user_id);
+
+drop policy if exists "Users can upsert their own impact snapshot" on public.impact_snapshots;
+create policy "Users can upsert their own impact snapshot"
+  on public.impact_snapshots for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update their own impact snapshot" on public.impact_snapshots;
+create policy "Users can update their own impact snapshot"
+  on public.impact_snapshots for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create or replace function public.create_default_impact_snapshot()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.impact_snapshots (
+    user_id,
+    plastic_waste_reduction,
+    food_waste_reduction,
+    packaging_reduction,
+    streak_days,
+    eco_score,
+    weekly_progress,
+    activities
+  )
+  values (
+    new.id,
+    70,
+    45,
+    90,
+    15,
+    82,
+    array[18, 22, 38, 30, 52, 41, 64],
+    '[
+      {
+        "title": "Refilled water bottle",
+        "subtitle": "Today, saved 2 plastic bottles",
+        "icon_name": "bottle"
+      },
+      {
+        "title": "Composted food scraps",
+        "subtitle": "Yesterday, 0.5kg waste diverted",
+        "icon_name": "compost"
+      },
+      {
+        "title": "Used reusable bag",
+        "subtitle": "June 3, avoided 4 bags",
+        "icon_name": "bag"
+      }
+    ]'::jsonb
+  )
+  on conflict (user_id) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created_create_impact_snapshot on auth.users;
+create trigger on_auth_user_created_create_impact_snapshot
+  after insert on auth.users
+  for each row execute function public.create_default_impact_snapshot();
+
 insert into public.eco_brands (slug, name, tagline, description, verified)
 values
   (
@@ -121,7 +223,14 @@ insert into public.eco_products (
   category,
   description,
   impact_label,
-  tags
+  tags,
+  price,
+  previous_price,
+  eco_score,
+  co2_saved_kg,
+  water_saved_liters,
+  material,
+  shipping_note
 )
 values
   (
@@ -131,7 +240,14 @@ values
     'Personal Care',
     'A soft-bristle toothbrush with a bamboo handle and recyclable travel sleeve.',
     'Plastic-free handle',
-    array['bamboo', 'travel', 'compostable']
+    array['bamboo', 'travel', 'compostable'],
+    12.99,
+    16.99,
+    88,
+    1.80,
+    24,
+    'Moso bamboo and plant-based bristles',
+    'Ships in recyclable paper packaging'
   ),
   (
     (select id from public.eco_brands where slug = 'refill-home'),
@@ -140,7 +256,14 @@ values
     'Kitchen',
     'Airtight jars for bulk grains, snacks, and refills with replaceable silicone seals.',
     'Reusable for years',
-    array['glass', 'bulk', 'kitchen']
+    array['glass', 'bulk', 'kitchen'],
+    28.00,
+    null,
+    92,
+    2.40,
+    38,
+    'Recycled glass and food-grade silicone',
+    'Carbon-neutral shipping on bundles'
   ),
   (
     (select id from public.eco_brands where slug = 'loop-market'),
@@ -149,7 +272,14 @@ values
     'Grocery',
     'Washable drawstring bags sized for produce, bread, and small pantry refills.',
     'Replaces thin plastic bags',
-    array['cotton', 'grocery', 'washable']
+    array['cotton', 'grocery', 'washable'],
+    18.50,
+    22.00,
+    84,
+    1.10,
+    18,
+    'GOTS organic cotton mesh',
+    'Packed without plastic mailers'
   ),
   (
     (select id from public.eco_brands where slug = 'refill-home'),
@@ -158,7 +288,46 @@ values
     'Cleaning',
     'Concentrated dish soap block that ships without water or plastic bottles.',
     'Bottle-free cleaning',
-    array['cleaning', 'soap', 'refill']
+    array['cleaning', 'soap', 'refill'],
+    9.99,
+    null,
+    90,
+    1.60,
+    42,
+    'Plant oils, mineral scrub, paper wrap',
+    'Minimal paper wrap and recycled carton'
+  ),
+  (
+    (select id from public.eco_brands where slug = 'refill-home'),
+    'bamboo-travel-mug',
+    'Premium Bamboo Travel Mug',
+    'Drinkware',
+    'A durable, BPA-free travel mug made from organic bamboo fibers. Keeps drinks hot for 6 hours and fits standard cup holders.',
+    'Eco',
+    array['bamboo', 'coffee', 'reusable'],
+    24.00,
+    32.00,
+    94,
+    2.80,
+    57,
+    'Bamboo fiber, recycled steel, silicone lid',
+    'Plastic-free shipping and compostable ink labels'
+  ),
+  (
+    (select id from public.eco_brands where slug = 'loop-market'),
+    'steel-bento',
+    'Steel Bento Lunch Box',
+    'Kitchen',
+    'Leak-resistant stainless bento for meal prep, takeout, and low-waste lunches.',
+    'Reusable lunch kit',
+    array['steel', 'meal prep', 'lunch'],
+    34.00,
+    null,
+    89,
+    3.20,
+    22,
+    'Food-grade stainless steel',
+    'Ships in molded recycled paper'
   )
 on conflict (slug) do update set
   brand_id = excluded.brand_id,
@@ -166,7 +335,14 @@ on conflict (slug) do update set
   category = excluded.category,
   description = excluded.description,
   impact_label = excluded.impact_label,
-  tags = excluded.tags;
+  tags = excluded.tags,
+  price = excluded.price,
+  previous_price = excluded.previous_price,
+  eco_score = excluded.eco_score,
+  co2_saved_kg = excluded.co2_saved_kg,
+  water_saved_liters = excluded.water_saved_liters,
+  material = excluded.material,
+  shipping_note = excluded.shipping_note;
 
 insert into public.eco_tips (slug, title, body, icon_name, sort_order)
 values

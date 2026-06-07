@@ -17,7 +17,7 @@ void main() {
     expect(find.text('Next'), findsOneWidget);
   });
 
-  testWidgets('can open the login screen from onboarding', (tester) async {
+  testWidgets('can open the sign-up screen from onboarding', (tester) async {
     await tester.pumpWidget(
       EcoDiscoverApp(
         repository: DemoEcoRepository(),
@@ -28,8 +28,8 @@ void main() {
     await tester.tap(find.text('Skip'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Welcome Back'), findsOneWidget);
-    expect(find.text('Login'), findsOneWidget);
+    expect(find.text('Join the Movement'), findsOneWidget);
+    expect(find.text('Sign up'), findsOneWidget);
     expect(find.text('nature@example.com'), findsOneWidget);
   });
 }

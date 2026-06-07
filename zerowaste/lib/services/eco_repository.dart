@@ -3,11 +3,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/eco_brand.dart';
 import '../models/eco_product.dart';
 import '../models/eco_tip.dart';
+import '../models/impact_snapshot.dart';
 
 abstract class EcoRepository {
   Future<List<EcoBrand>> fetchBrands();
   Future<List<EcoProduct>> fetchProducts();
   Future<List<EcoTip>> fetchTips();
+  Future<ImpactSnapshot> fetchImpactSnapshot();
   Future<void> setFavorite({required String productId, required bool favorite});
 }
 
@@ -44,6 +46,21 @@ class SupabaseEcoRepository implements EcoRepository {
     return rows
         .map<EcoTip>((row) => EcoTip.fromMap(Map<String, dynamic>.from(row)))
         .toList();
+  }
+
+  @override
+  Future<ImpactSnapshot> fetchImpactSnapshot() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return _demoImpactSnapshot;
+
+    final rows = await _client
+        .from('impact_snapshots')
+        .select()
+        .eq('user_id', userId)
+        .limit(1);
+    if (rows.isEmpty) return _demoImpactSnapshot;
+
+    return ImpactSnapshot.fromMap(Map<String, dynamic>.from(rows.first));
   }
 
   @override
@@ -158,6 +175,11 @@ class DemoEcoRepository implements EcoRepository {
   }
 
   @override
+  Future<ImpactSnapshot> fetchImpactSnapshot() async {
+    return _demoImpactSnapshot;
+  }
+
+  @override
   Future<void> setFavorite({
     required String productId,
     required bool favorite,
@@ -182,6 +204,13 @@ const _demoProducts = [
     impactLabel: 'Plastic-free handle',
     imageUrl: '',
     tags: ['bamboo', 'travel', 'compostable'],
+    price: 12.99,
+    previousPrice: 16.99,
+    ecoScore: 88,
+    co2SavedKg: 1.8,
+    waterSavedLiters: 24,
+    material: 'Moso bamboo and plant-based bristles',
+    shippingNote: 'Ships in recyclable paper packaging',
     isFavorite: true,
   ),
   EcoProduct(
@@ -195,6 +224,13 @@ const _demoProducts = [
     impactLabel: 'Reusable for years',
     imageUrl: '',
     tags: ['glass', 'bulk', 'kitchen'],
+    price: 28.00,
+    previousPrice: null,
+    ecoScore: 92,
+    co2SavedKg: 2.4,
+    waterSavedLiters: 38,
+    material: 'Recycled glass and food-grade silicone',
+    shippingNote: 'Carbon-neutral shipping on bundles',
     isFavorite: false,
   ),
   EcoProduct(
@@ -208,6 +244,13 @@ const _demoProducts = [
     impactLabel: 'Replaces thin plastic bags',
     imageUrl: '',
     tags: ['cotton', 'grocery', 'washable'],
+    price: 18.50,
+    previousPrice: 22.00,
+    ecoScore: 84,
+    co2SavedKg: 1.1,
+    waterSavedLiters: 18,
+    material: 'GOTS organic cotton mesh',
+    shippingNote: 'Packed without plastic mailers',
     isFavorite: false,
   ),
   EcoProduct(
@@ -221,6 +264,79 @@ const _demoProducts = [
     impactLabel: 'Bottle-free cleaning',
     imageUrl: '',
     tags: ['cleaning', 'soap', 'refill'],
+    price: 9.99,
+    previousPrice: null,
+    ecoScore: 90,
+    co2SavedKg: 1.6,
+    waterSavedLiters: 42,
+    material: 'Plant oils, mineral scrub, paper wrap',
+    shippingNote: 'Minimal paper wrap and recycled carton',
+    isFavorite: false,
+  ),
+  EcoProduct(
+    id: 'bamboo-travel-mug',
+    brandId: 'refill-home',
+    brandName: 'Refill Home',
+    name: 'Premium Bamboo Travel Mug',
+    category: 'Drinkware',
+    description:
+        'A durable, BPA-free travel mug made from organic bamboo fibers. Keeps drinks hot for 6 hours and fits standard cup holders.',
+    impactLabel: 'Eco',
+    imageUrl: '',
+    tags: ['bamboo', 'coffee', 'reusable'],
+    price: 24.00,
+    previousPrice: 32.00,
+    ecoScore: 94,
+    co2SavedKg: 2.8,
+    waterSavedLiters: 57,
+    material: 'Bamboo fiber, recycled steel, silicone lid',
+    shippingNote: 'Plastic-free shipping and compostable ink labels',
+    isFavorite: false,
+  ),
+  EcoProduct(
+    id: 'steel-bento',
+    brandId: 'loop-market',
+    brandName: 'Loop Market',
+    name: 'Steel Bento Lunch Box',
+    category: 'Kitchen',
+    description:
+        'Leak-resistant stainless bento for meal prep, takeout, and low-waste lunches.',
+    impactLabel: 'Reusable lunch kit',
+    imageUrl: '',
+    tags: ['steel', 'meal prep', 'lunch'],
+    price: 34.00,
+    previousPrice: null,
+    ecoScore: 89,
+    co2SavedKg: 3.2,
+    waterSavedLiters: 22,
+    material: 'Food-grade stainless steel',
+    shippingNote: 'Ships in molded recycled paper',
     isFavorite: false,
   ),
 ];
+
+const _demoImpactSnapshot = ImpactSnapshot(
+  plasticWasteReduction: 70,
+  foodWasteReduction: 45,
+  packagingReduction: 90,
+  streakDays: 15,
+  ecoScore: 82,
+  weeklyProgress: [18, 22, 38, 30, 52, 41, 64],
+  activities: [
+    EcoActivity(
+      title: 'Refilled water bottle',
+      subtitle: 'Today, saved 2 plastic bottles',
+      iconName: 'bottle',
+    ),
+    EcoActivity(
+      title: 'Composted food scraps',
+      subtitle: 'Yesterday, 0.5kg waste diverted',
+      iconName: 'compost',
+    ),
+    EcoActivity(
+      title: 'Used reusable bag',
+      subtitle: 'June 3, avoided 4 bags',
+      iconName: 'bag',
+    ),
+  ],
+);
