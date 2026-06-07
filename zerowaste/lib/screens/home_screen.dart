@@ -253,19 +253,25 @@ class _HomeScreenState extends State<HomeScreen> {
                     actionLabel: '${_filteredProducts.length} found',
                   ),
                 ),
-                SliverList.separated(
-                  itemCount: _filteredProducts.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final product = _filteredProducts[index];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: _ProductCard(
-                        product: product,
-                        onFavorite: () => _toggleFavorite(product),
-                      ),
-                    );
-                  },
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final product = _filteredProducts[index];
+                      return Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          20,
+                          index == 0 ? 0 : 12,
+                          20,
+                          0,
+                        ),
+                        child: _ProductCard(
+                          product: product,
+                          onFavorite: () => _toggleFavorite(product),
+                        ),
+                      );
+                    },
+                    childCount: _filteredProducts.length,
+                  ),
                 ),
                 SliverToBoxAdapter(
                   child: _SectionHeader(
@@ -293,20 +299,21 @@ class _HomeScreenState extends State<HomeScreen> {
                     actionLabel: 'Today',
                   ),
                 ),
-                SliverList.separated(
-                  itemCount: _tips.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        20,
-                        0,
-                        20,
-                        index == _tips.length - 1 ? 28 : 0,
-                      ),
-                      child: _TipCard(tip: _tips[index]),
-                    );
-                  },
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      return Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          20,
+                          index == 0 ? 0 : 10,
+                          20,
+                          index == _tips.length - 1 ? 28 : 0,
+                        ),
+                        child: _TipCard(tip: _tips[index]),
+                      );
+                    },
+                    childCount: _tips.length,
+                  ),
                 ),
               ],
             ],
