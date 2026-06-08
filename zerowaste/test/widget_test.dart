@@ -20,7 +20,7 @@ void main() {
       ),
     );
 
-    expect(find.text('EcoDiscover'), findsOneWidget);
+    expect(find.text('ZeroWaste'), findsOneWidget);
     expect(find.text('Eco-friendly discovery'), findsOneWidget);
     expect(find.text('Next'), findsOneWidget);
   });

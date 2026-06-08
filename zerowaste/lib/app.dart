@@ -19,7 +19,7 @@ class EcoDiscoverApp extends StatelessWidget {
     const seed = Color(0xFF4B7052);
 
     return MaterialApp(
-      title: 'EcoDiscover',
+      title: 'ZeroWaste',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
