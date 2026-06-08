@@ -1,12 +1,21 @@
 import 'package:flutter/material.dart';
 
-import '../models/eco_brand.dart';
-import '../models/eco_product.dart';
-import '../models/eco_tip.dart';
-import '../models/impact_snapshot.dart';
+import '../models/market_activity.dart';
+import '../models/nft_collection.dart';
+import '../models/nft_listing.dart';
+import '../models/portfolio_snapshot.dart';
 import '../services/auth_service.dart';
-import '../services/eco_repository.dart';
+import '../services/marketplace_repository.dart';
 import 'login_screen.dart';
+
+const _bg = Color(0xFF0A0B12);
+const _surface = Color(0xFF121420);
+const _surfaceHigh = Color(0xFF191C2B);
+const _muted = Color(0xFFA5ABC0);
+const _line = Color(0xFF252A3D);
+const _primary = Color(0xFF8B5CF6);
+const _cyan = Color(0xFF22D3EE);
+const _orange = Color(0xFFFF7A59);
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -15,7 +24,7 @@ class HomeScreen extends StatefulWidget {
     required this.authService,
   });
 
-  final EcoRepository repository;
+  final MarketplaceRepository repository;
   final AuthService authService;
 
   @override
@@ -25,10 +34,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
 
-  List<EcoProduct> _products = [];
-  List<EcoBrand> _brands = [];
-  List<EcoTip> _tips = [];
-  ImpactSnapshot? _impact;
+  List<NftListing> _listings = [];
+  List<NftCollection> _collections = [];
+  List<MarketActivity> _activities = [];
+  PortfolioSnapshot? _portfolio;
   String _category = 'All';
   int _tab = 0;
   bool _loading = true;
@@ -53,35 +62,35 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final products = await widget.repository.fetchProducts();
-      final brands = await widget.repository.fetchBrands();
-      final tips = await widget.repository.fetchTips();
-      final impact = await widget.repository.fetchImpactSnapshot();
+      final listings = await widget.repository.fetchListings();
+      final collections = await widget.repository.fetchCollections();
+      final activities = await widget.repository.fetchActivities();
+      final portfolio = await widget.repository.fetchPortfolioSnapshot();
 
       if (!mounted) return;
       setState(() {
-        _products = products;
-        _brands = brands;
-        _tips = tips;
-        _impact = impact;
+        _listings = listings;
+        _collections = collections;
+        _activities = activities;
+        _portfolio = portfolio;
         _loading = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Could not load EcoDiscover data.';
+        _error = 'Could not load the marketplace.';
         _loading = false;
       });
     }
   }
 
-  Future<void> _toggleFavorite(EcoProduct product) async {
-    final nextFavorite = !product.isFavorite;
+  Future<void> _toggleFavorite(NftListing listing) async {
+    final nextFavorite = !listing.isFavorite;
 
     setState(() {
-      _products = _products
+      _listings = _listings
           .map(
-            (item) => item.id == product.id
+            (item) => item.id == listing.id
                 ? item.copyWith(isFavorite: nextFavorite)
                 : item,
           )
@@ -90,22 +99,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       await widget.repository.setFavorite(
-        productId: product.id,
+        listingId: listing.id,
         favorite: nextFavorite,
       );
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _products = _products
+        _listings = _listings
             .map(
-              (item) => item.id == product.id
-                  ? item.copyWith(isFavorite: product.isFavorite)
+              (item) => item.id == listing.id
+                  ? item.copyWith(isFavorite: listing.isFavorite)
                   : item,
             )
             .toList();
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not update favorite.')),
+        const SnackBar(content: Text('Could not update watchlist.')),
       );
     }
   }
@@ -124,32 +133,36 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<String> get _categories {
-    final values = _products.map((product) => product.category).toSet().toList()
+    final values = _listings.map((listing) => listing.category).toSet().toList()
       ..sort();
     return ['All', ...values];
   }
 
-  List<EcoProduct> get _filteredProducts {
+  List<NftListing> get _filteredListings {
     final query = _searchController.text.trim().toLowerCase();
 
-    return _products.where((product) {
-      final matchesCategory = _category == 'All' || product.category == _category;
+    return _listings.where((listing) {
+      final matchesCategory =
+          _category == 'All' || listing.category == _category;
       final matchesSearch = query.isEmpty ||
-          product.name.toLowerCase().contains(query) ||
-          product.brandName.toLowerCase().contains(query) ||
-          product.tags.any((tag) => tag.toLowerCase().contains(query));
+          listing.title.toLowerCase().contains(query) ||
+          listing.collectionName.toLowerCase().contains(query) ||
+          listing.creator.toLowerCase().contains(query) ||
+          listing.tags.any((tag) => tag.toLowerCase().contains(query));
       return matchesCategory && matchesSearch;
     }).toList();
   }
 
-  void _openProduct(EcoProduct product) {
+  void _openListing(NftListing listing) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ProductDetailScreen(
-          product: product,
-          similarProducts:
-              _products.where((item) => item.id != product.id).take(2).toList(),
-          onFavorite: () => _toggleFavorite(product),
+        builder: (_) => NftDetailScreen(
+          listing: listing,
+          similarListings: _listings
+              .where((item) => item.id != listing.id)
+              .take(3)
+              .toList(),
+          onFavorite: () => _toggleFavorite(listing),
         ),
       ),
     );
@@ -157,7 +170,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final impact = _impact;
+    final portfolio = _portfolio;
 
     return Scaffold(
       body: SafeArea(
@@ -165,22 +178,26 @@ class _HomeScreenState extends State<HomeScreen> {
           onRefresh: _load,
           child: _loading
               ? const Center(child: CircularProgressIndicator())
-              : _error != null || impact == null
-                  ? _ErrorState(message: _error ?? 'Missing impact data', onRetry: _load)
+              : _error != null || portfolio == null
+                  ? _ErrorState(
+                      message: _error ?? 'Missing portfolio data',
+                      onRetry: _load,
+                    )
                   : IndexedStack(
                       index: _tab,
                       children: [
-                        _HomeTab(
-                          products: _products,
-                          brands: _brands,
-                          tips: _tips,
-                          impact: impact,
-                          onOpenProducts: () => setState(() => _tab = 1),
-                          onOpenProduct: _openProduct,
+                        _DiscoverTab(
+                          listings: _listings,
+                          collections: _collections,
+                          activities: _activities,
+                          portfolio: portfolio,
+                          isDemo: widget.authService.isDemo,
+                          onOpenExplore: () => setState(() => _tab = 1),
+                          onOpenListing: _openListing,
                           onSignOut: _signOut,
                         ),
-                        _ProductsTab(
-                          products: _filteredProducts,
+                        _ExploreTab(
+                          listings: _filteredListings,
                           searchController: _searchController,
                           categories: _categories,
                           selectedCategory: _category,
@@ -188,17 +205,17 @@ class _HomeScreenState extends State<HomeScreen> {
                           onCategoryChanged: (value) =>
                               setState(() => _category = value),
                           onFavorite: _toggleFavorite,
-                          onOpenProduct: _openProduct,
+                          onOpenListing: _openListing,
                         ),
-                        _TrackerTab(impact: impact),
-                        _MarketplaceTab(
-                          products: _products,
-                          brands: _brands,
-                          onOpenProduct: _openProduct,
+                        _DropsTab(
+                          collections: _collections,
+                          activities: _activities,
                         ),
-                        _ProfileTab(
+                        _PortfolioTab(
                           email: widget.authService.currentEmail,
-                          impact: impact,
+                          listings: _listings,
+                          portfolio: portfolio,
+                          onOpenListing: _openListing,
                           onSignOut: _signOut,
                         ),
                       ],
@@ -210,29 +227,24 @@ class _HomeScreenState extends State<HomeScreen> {
         onDestinationSelected: (index) => setState(() => _tab = index),
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
+            icon: Icon(Icons.grid_view_outlined),
+            selectedIcon: Icon(Icons.grid_view_rounded),
             label: 'Home',
           ),
           NavigationDestination(
-            icon: Icon(Icons.spa_outlined),
-            selectedIcon: Icon(Icons.spa),
-            label: 'Products',
+            icon: Icon(Icons.search_outlined),
+            selectedIcon: Icon(Icons.search),
+            label: 'Explore',
           ),
           NavigationDestination(
-            icon: Icon(Icons.track_changes_outlined),
-            selectedIcon: Icon(Icons.track_changes),
-            label: 'Tracker',
+            icon: Icon(Icons.local_fire_department_outlined),
+            selectedIcon: Icon(Icons.local_fire_department),
+            label: 'Drops',
           ),
           NavigationDestination(
-            icon: Icon(Icons.storefront_outlined),
-            selectedIcon: Icon(Icons.storefront),
-            label: 'Marketplace',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Profile',
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: Icon(Icons.account_balance_wallet),
+            label: 'Portfolio',
           ),
         ],
       ),
@@ -240,28 +252,31 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _HomeTab extends StatelessWidget {
-  const _HomeTab({
-    required this.products,
-    required this.brands,
-    required this.tips,
-    required this.impact,
-    required this.onOpenProducts,
-    required this.onOpenProduct,
+class _DiscoverTab extends StatelessWidget {
+  const _DiscoverTab({
+    required this.listings,
+    required this.collections,
+    required this.activities,
+    required this.portfolio,
+    required this.isDemo,
+    required this.onOpenExplore,
+    required this.onOpenListing,
     required this.onSignOut,
   });
 
-  final List<EcoProduct> products;
-  final List<EcoBrand> brands;
-  final List<EcoTip> tips;
-  final ImpactSnapshot impact;
-  final VoidCallback onOpenProducts;
-  final ValueChanged<EcoProduct> onOpenProduct;
+  final List<NftListing> listings;
+  final List<NftCollection> collections;
+  final List<MarketActivity> activities;
+  final PortfolioSnapshot portfolio;
+  final bool isDemo;
+  final VoidCallback onOpenExplore;
+  final ValueChanged<NftListing> onOpenListing;
   final VoidCallback onSignOut;
 
   @override
   Widget build(BuildContext context) {
-    final featured = products.take(4).toList();
+    final featured = listings.isEmpty ? null : listings.first;
+    final trending = listings.skip(1).take(4).toList();
 
     return CustomScrollView(
       slivers: [
@@ -271,21 +286,46 @@ class _HomeTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _TopBar(title: 'EcoDiscover', onSignOut: onSignOut),
+                _TopBar(title: 'NovaNFT', onSignOut: onSignOut),
                 const SizedBox(height: 16),
-                _SearchField(hintText: 'Search eco-friendly essentials...'),
-                const SizedBox(height: 16),
-                _HeroSwapCard(),
+                if (isDemo) ...[
+                  const _SupabaseBanner(),
+                  const SizedBox(height: 16),
+                ],
+                if (featured != null)
+                  _FeaturedHero(
+                    listing: featured,
+                    onOpen: () => onOpenListing(featured),
+                  ),
                 const SizedBox(height: 18),
-                _WeeklyProgressCard(impact: impact),
-                const SizedBox(height: 16),
-                _EcoScoreCard(score: impact.ecoScore),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _MetricCard(
+                        title: 'Portfolio',
+                        value: '${portfolio.portfolioValueEth.toStringAsFixed(2)} ETH',
+                        icon: Icons.account_balance_wallet_outlined,
+                        accent: _primary,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _MetricCard(
+                        title: 'Watchlist',
+                        value: '${portfolio.watchlistCount} NFTs',
+                        icon: Icons.favorite_border,
+                        accent: _cyan,
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 22),
                 _SectionHeader(
-                  title: 'Featured Products',
-                  action: 'View all',
-                  onAction: onOpenProducts,
+                  title: 'Trending auctions',
+                  action: 'Explore all',
+                  onAction: onOpenExplore,
                 ),
+                const SizedBox(height: 12),
               ],
             ),
           ),
@@ -295,30 +335,45 @@ class _HomeTab extends StatelessWidget {
           sliver: SliverGrid(
             delegate: SliverChildBuilderDelegate(
               (context, index) {
-                final product = featured[index];
-                return _SmallProductTile(
-                  product: product,
-                  onTap: () => onOpenProduct(product),
+                final listing = trending[index];
+                return _ListingCard(
+                  listing: listing,
+                  onTap: () => onOpenListing(listing),
                 );
               },
-              childCount: featured.length,
+              childCount: trending.length,
             ),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              childAspectRatio: .78,
+              childAspectRatio: .72,
             ),
           ),
         ),
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 26),
+            padding: const EdgeInsets.fromLTRB(18, 22, 18, 28),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (brands.isNotEmpty) _BrandSpotlight(brand: brands.first),
+                const _SectionHeader(title: 'Verified collections'),
                 const SizedBox(height: 12),
-                if (tips.isNotEmpty) _MilestoneCard(tip: tips.first),
+                SizedBox(
+                  height: 176,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: collections.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 12),
+                    itemBuilder: (context, index) {
+                      return _CollectionCard(collection: collections[index]);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 22),
+                const _SectionHeader(title: 'Live market activity'),
+                const SizedBox(height: 12),
+                ...activities.map(_ActivityTile.new),
               ],
             ),
           ),
@@ -328,26 +383,26 @@ class _HomeTab extends StatelessWidget {
   }
 }
 
-class _ProductsTab extends StatelessWidget {
-  const _ProductsTab({
-    required this.products,
+class _ExploreTab extends StatelessWidget {
+  const _ExploreTab({
+    required this.listings,
     required this.searchController,
     required this.categories,
     required this.selectedCategory,
     required this.onSearchChanged,
     required this.onCategoryChanged,
     required this.onFavorite,
-    required this.onOpenProduct,
+    required this.onOpenListing,
   });
 
-  final List<EcoProduct> products;
+  final List<NftListing> listings;
   final TextEditingController searchController;
   final List<String> categories;
   final String selectedCategory;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onCategoryChanged;
-  final ValueChanged<EcoProduct> onFavorite;
-  final ValueChanged<EcoProduct> onOpenProduct;
+  final ValueChanged<NftListing> onFavorite;
+  final ValueChanged<NftListing> onOpenListing;
 
   @override
   Widget build(BuildContext context) {
@@ -357,14 +412,15 @@ class _ProductsTab extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const _TopBar(title: 'EcoDiscover'),
-                const SizedBox(height: 14),
+                const _TopBar(title: 'Explore NFTs'),
+                const SizedBox(height: 16),
                 TextField(
                   controller: searchController,
                   onChanged: onSearchChanged,
                   decoration: const InputDecoration(
-                    hintText: 'Search eco-essentials...',
+                    hintText: 'Search collection, creator, token...',
                     prefixIcon: Icon(Icons.search),
                     suffixIcon: Icon(Icons.tune),
                   ),
@@ -382,23 +438,19 @@ class _ProductsTab extends StatelessWidget {
                         label: Text(category),
                         selected: category == selectedCategory,
                         onSelected: (_) => onCategoryChanged(category),
+                        selectedColor: _primary.withValues(alpha: .28),
+                        side: const BorderSide(color: _line),
                       );
                     },
                   ),
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Text('Showing ${products.length} results'),
-                    const Spacer(),
-                    Text(
-                      'Advanced Filters',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 16),
+                Text(
+                  '${listings.length} live listings',
+                  style: const TextStyle(
+                    color: _muted,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 14),
               ],
@@ -406,24 +458,24 @@ class _ProductsTab extends StatelessWidget {
           ),
         ),
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
           sliver: SliverGrid(
             delegate: SliverChildBuilderDelegate(
               (context, index) {
-                final product = products[index];
-                return _MarketplaceProductCard(
-                  product: product,
-                  onFavorite: () => onFavorite(product),
-                  onTap: () => onOpenProduct(product),
+                final listing = listings[index];
+                return _ListingCard(
+                  listing: listing,
+                  onFavorite: () => onFavorite(listing),
+                  onTap: () => onOpenListing(listing),
                 );
               },
-              childCount: products.length,
+              childCount: listings.length,
             ),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              crossAxisSpacing: 14,
-              mainAxisSpacing: 14,
-              childAspectRatio: .64,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: .70,
             ),
           ),
         ),
@@ -432,226 +484,163 @@ class _ProductsTab extends StatelessWidget {
   }
 }
 
-class _TrackerTab extends StatelessWidget {
-  const _TrackerTab({required this.impact});
+class _DropsTab extends StatelessWidget {
+  const _DropsTab({required this.collections, required this.activities});
 
-  final ImpactSnapshot impact;
+  final List<NftCollection> collections;
+  final List<MarketActivity> activities;
 
   @override
   Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        const SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(18, 12, 18, 0),
-            child: _TopBar(title: 'EcoDiscover'),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+      children: [
+        const _TopBar(title: 'Drops'),
+        const SizedBox(height: 16),
+        const _DropHero(),
+        const SizedBox(height: 22),
+        const _SectionHeader(title: 'Collection floor'),
+        const SizedBox(height: 12),
+        ...collections.map(
+          (collection) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _CollectionRow(collection: collection),
           ),
         ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              children: [
-                _ImpactHero(impact: impact),
-                const SizedBox(height: 18),
-                GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 1.18,
-                  children: [
-                    _MetricCard(
-                      icon: Icons.delete_outline,
-                      label: 'Plastic Waste',
-                      value: '${impact.plasticWasteReduction}%',
-                    ),
-                    _MetricCard(
-                      icon: Icons.restaurant_outlined,
-                      label: 'Food Waste',
-                      value: '${impact.foodWasteReduction}%',
-                    ),
-                    _MetricCard(
-                      icon: Icons.inventory_2_outlined,
-                      label: 'Packaging',
-                      value: '${impact.packagingReduction}%',
-                    ),
-                    _MetricCard(
-                      icon: Icons.local_fire_department_outlined,
-                      label: 'Streak',
-                      value: '${impact.streakDays} Days',
-                      highlighted: true,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                _WasteReductionChart(values: impact.weeklyProgress),
-                const SizedBox(height: 22),
-                _ActivityList(activities: impact.activities),
-              ],
-            ),
-          ),
-        ),
+        const SizedBox(height: 10),
+        const _SectionHeader(title: 'Latest activity'),
+        const SizedBox(height: 12),
+        ...activities.map(_ActivityTile.new),
       ],
     );
   }
 }
 
-class _MarketplaceTab extends StatelessWidget {
-  const _MarketplaceTab({
-    required this.products,
-    required this.brands,
-    required this.onOpenProduct,
-  });
-
-  final List<EcoProduct> products;
-  final List<EcoBrand> brands;
-  final ValueChanged<EcoProduct> onOpenProduct;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        const SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(18, 12, 18, 0),
-            child: _TopBar(title: 'Marketplace'),
-          ),
-        ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
-            child: _MarketplaceHero(),
-          ),
-        ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
-            child: _SectionHeader(title: 'Sustainable Brands'),
-          ),
-        ),
-        SliverToBoxAdapter(
-          child: SizedBox(
-            height: 150,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              scrollDirection: Axis.horizontal,
-              itemBuilder: (context, index) => _BrandCard(brand: brands[index]),
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemCount: brands.length,
-            ),
-          ),
-        ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 22, 18, 12),
-            child: _SectionHeader(title: 'Best Sellers'),
-          ),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final product = products[index];
-                return Padding(
-                  padding: EdgeInsets.only(top: index == 0 ? 0 : 12),
-                  child: _WideProductCard(
-                    product: product,
-                    onTap: () => onOpenProduct(product),
-                  ),
-                );
-              },
-              childCount: products.length,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ProfileTab extends StatelessWidget {
-  const _ProfileTab({
+class _PortfolioTab extends StatelessWidget {
+  const _PortfolioTab({
     required this.email,
-    required this.impact,
+    required this.listings,
+    required this.portfolio,
+    required this.onOpenListing,
     required this.onSignOut,
   });
 
   final String? email;
-  final ImpactSnapshot impact;
+  final List<NftListing> listings;
+  final PortfolioSnapshot portfolio;
+  final ValueChanged<NftListing> onOpenListing;
   final VoidCallback onSignOut;
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.primary;
+    final watched = listings.where((listing) => listing.isFavorite).toList();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 26),
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
       children: [
-        const _TopBar(title: 'Profile'),
-        const SizedBox(height: 24),
-        CircleAvatar(
-          radius: 42,
-          backgroundColor: color.withValues(alpha: .14),
-          child: Icon(Icons.eco, color: color, size: 42),
+        _TopBar(title: 'Portfolio', onSignOut: onSignOut),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _panelDecoration(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const CircleAvatar(
+                    radius: 28,
+                    backgroundColor: _primary,
+                    child: Icon(Icons.person, color: Colors.white),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Nova Collector',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          email ?? 'Demo wallet',
+                          style: const TextStyle(color: _muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: onSignOut,
+                    icon: const Icon(Icons.logout),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: _MetricCard(
+                      title: 'Balance',
+                      value: '${portfolio.balanceEth.toStringAsFixed(2)} ETH',
+                      icon: Icons.currency_bitcoin,
+                      accent: _orange,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _MetricCard(
+                      title: 'Created',
+                      value: '${portfolio.createdCount}',
+                      icon: Icons.brush_outlined,
+                      accent: _cyan,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _MiniTrendChart(values: portfolio.trendingScores),
+            ],
+          ),
         ),
-        const SizedBox(height: 14),
-        Text(
-          'Eco Hero',
-          textAlign: TextAlign.center,
-          style: Theme.of(context)
-              .textTheme
-              .headlineSmall
-              ?.copyWith(fontWeight: FontWeight.w900),
-        ),
-        Text(
-          email ?? 'nature@example.com',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.grey[600]),
-        ),
-        const SizedBox(height: 18),
-        _EcoScoreCard(score: impact.ecoScore),
-        const SizedBox(height: 14),
-        _ProfileAction(icon: Icons.favorite_border, label: 'Saved Products'),
-        _ProfileAction(icon: Icons.receipt_long_outlined, label: 'Orders'),
-        _ProfileAction(icon: Icons.settings_outlined, label: 'Settings'),
-        _ProfileAction(icon: Icons.help_outline, label: 'Help Center'),
+        const SizedBox(height: 22),
+        const _SectionHeader(title: 'Watchlist'),
         const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: onSignOut,
-          icon: const Icon(Icons.logout),
-          label: const Text('Sign out'),
-        ),
+        if (watched.isEmpty)
+          const _EmptyWatchlist()
+        else
+          ...watched.map(
+            (listing) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _WideListingCard(
+                listing: listing,
+                onTap: () => onOpenListing(listing),
+              ),
+            ),
+          ),
       ],
     );
   }
 }
 
-class ProductDetailScreen extends StatefulWidget {
-  const ProductDetailScreen({
+class NftDetailScreen extends StatelessWidget {
+  const NftDetailScreen({
     super.key,
-    required this.product,
-    required this.similarProducts,
+    required this.listing,
+    required this.similarListings,
     required this.onFavorite,
   });
 
-  final EcoProduct product;
-  final List<EcoProduct> similarProducts;
+  final NftListing listing;
+  final List<NftListing> similarListings;
   final VoidCallback onFavorite;
 
   @override
-  State<ProductDetailScreen> createState() => _ProductDetailScreenState();
-}
-
-class _ProductDetailScreenState extends State<ProductDetailScreen> {
-  late bool _favorite = widget.product.isFavorite;
-
-  @override
   Widget build(BuildContext context) {
-    final product = widget.product;
-    final color = Theme.of(context).colorScheme.primary;
+    final accent = Color(listing.accentColor);
 
     return Scaffold(
       body: SafeArea(
@@ -659,136 +648,193 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.arrow_back),
-                    ),
-                    const Expanded(
-                      child: Text(
-                        'EcoDiscover',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () {},
-                      icon: const Icon(Icons.share_outlined),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
                 padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
-                child: _LargeProductVisual(product: product),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                product.name,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineSmall
-                                    ?.copyWith(fontWeight: FontWeight.w900),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _money(product.price),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleLarge
-                                    ?.copyWith(fontWeight: FontWeight.w900),
-                              ),
-                            ],
+                        IconButton.filledTonal(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.arrow_back),
+                        ),
+                        const Spacer(),
+                        IconButton.filledTonal(
+                          onPressed: onFavorite,
+                          icon: Icon(
+                            listing.isFavorite
+                                ? Icons.favorite
+                                : Icons.favorite_border,
+                            color: listing.isFavorite ? Colors.redAccent : null,
                           ),
                         ),
-                        _EcoBadge(score: product.ecoScore),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    _ShippingNote(note: product.shippingNote),
-                    const SizedBox(height: 18),
-                    Text(
-                      'ABOUT THIS ITEM',
-                      style: TextStyle(
-                        color: Colors.grey[700],
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: .8,
-                      ),
+                    const SizedBox(height: 14),
+                    Hero(
+                      tag: 'nft-${listing.id}',
+                      child: _NftArtwork(listing: listing, height: 360),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      product.description,
-                      style: const TextStyle(height: 1.45),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        _Pill(
+                          label: listing.collectionName,
+                          icon: Icons.verified,
+                          color: accent,
+                        ),
+                        const SizedBox(width: 8),
+                        _Pill(
+                          label: listing.chain,
+                          icon: Icons.hub_outlined,
+                          color: _cyan,
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      'Material: ${product.material}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                      listing.title,
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -.8,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Created by ${listing.creator} - Token ${listing.tokenId}',
+                      style: const TextStyle(color: _muted),
+                    ),
+                    const SizedBox(height: 18),
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: _panelDecoration(),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Current ask', style: TextStyle(color: _muted)),
+                          const SizedBox(height: 6),
+                          Text(
+                            _eth(listing.priceEth),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 32,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: FilledButton(
+                                  onPressed: () => _showAction(
+                                    context,
+                                    'Bid flow ready for Supabase functions.',
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                  ),
+                                  child: const Text('Place bid'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () => _showAction(
+                                    context,
+                                    'Checkout can be wired to wallet payments.',
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: const BorderSide(color: _line),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                  ),
+                                  child: const Text('Buy now'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 18),
                     Row(
                       children: [
                         Expanded(
-                          child: FilledButton.icon(
-                            onPressed: () {},
-                            icon: const Icon(Icons.shopping_cart_outlined),
-                            label: const Text('Go to Store'),
+                          child: _DetailMetric(
+                            label: 'Highest bid',
+                            value: _eth(listing.highestBidEth),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        IconButton.filledTonal(
-                          onPressed: () {
-                            setState(() => _favorite = !_favorite);
-                            widget.onFavorite();
-                          },
-                          icon: Icon(
-                            _favorite ? Icons.favorite : Icons.favorite_border,
-                            color: _favorite ? const Color(0xFFD86B64) : color,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _DetailMetric(
+                            label: 'Last sale',
+                            value: _eth(listing.lastSaleEth),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _DetailMetric(
+                            label: 'Rarity',
+                            value: listing.rarity,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 24),
-                    _SectionHeader(title: 'Similar Sustainable Picks'),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      height: 210,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemBuilder: (context, index) {
-                          final similar = widget.similarProducts[index];
-                          return SizedBox(
-                            width: 160,
-                            child: _SmallProductTile(
-                              product: similar,
-                              onTap: () {},
-                            ),
-                          );
-                        },
-                        separatorBuilder: (_, __) => const SizedBox(width: 12),
-                        itemCount: widget.similarProducts.length,
-                      ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Description',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                          ),
                     ),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 8),
+                    Text(
+                      listing.description,
+                      style: const TextStyle(color: _muted, height: 1.55),
+                    ),
+                    const SizedBox(height: 20),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: listing.tags
+                          .map((tag) => _Pill(label: tag, color: accent))
+                          .toList(),
+                    ),
+                    const SizedBox(height: 24),
+                    const _SectionHeader(title: 'More like this'),
+                    const SizedBox(height: 12),
                   ],
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
+              sliver: SliverGrid(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final item = similarListings[index];
+                    return _ListingCard(listing: item);
+                  },
+                  childCount: similarListings.length,
+                ),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: .72,
                 ),
               ),
             ),
@@ -796,6 +842,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ),
       ),
     );
+  }
+
+  void _showAction(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
@@ -809,176 +859,697 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.menu),
-          visualDensity: VisualDensity.compact,
-        ),
-        Expanded(
-          child: Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontWeight: FontWeight.w900),
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            gradient: const LinearGradient(colors: [_primary, _cyan]),
           ),
+          child: const Icon(Icons.diamond_outlined, color: Colors.white),
         ),
+        const SizedBox(width: 12),
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -.4,
+              ),
+        ),
+        const Spacer(),
         IconButton(
           onPressed: onSignOut,
           icon: const Icon(Icons.notifications_none),
-          visualDensity: VisualDensity.compact,
         ),
       ],
     );
   }
 }
 
-class _SearchField extends StatelessWidget {
-  const _SearchField({required this.hintText});
-
-  final String hintText;
+class _SupabaseBanner extends StatelessWidget {
+  const _SupabaseBanner();
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      enabled: false,
-      decoration: InputDecoration(
-        hintText: hintText,
-        prefixIcon: const Icon(Icons.search),
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _primary.withValues(alpha: .14),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _primary.withValues(alpha: .32)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.storage_outlined, color: Color(0xFFD9D6FF)),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Demo data is showing. Configure Supabase keys for live collections, listings, and watchlists.',
+              style: TextStyle(color: Color(0xFFD9D6FF), height: 1.35),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _HeroSwapCard extends StatelessWidget {
+class _FeaturedHero extends StatelessWidget {
+  const _FeaturedHero({required this.listing, required this.onOpen});
+
+  final NftListing listing;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Color(listing.accentColor);
+
+    return InkWell(
+      onTap: onOpen,
+      borderRadius: BorderRadius.circular(34),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(34),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [accent, const Color(0xFF1B1D2C), _surface],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: accent.withValues(alpha: .30),
+              blurRadius: 32,
+              offset: const Offset(0, 18),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const _GlassChip(label: 'Featured auction'),
+                const Spacer(),
+                _GlassChip(label: listing.endsIn),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        listing.title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 30,
+                          fontWeight: FontWeight.w900,
+                          height: 1.02,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        listing.collectionName,
+                        style: const TextStyle(color: Color(0xFFE5E7FF)),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        _eth(listing.priceEth),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      FilledButton(
+                        onPressed: onOpen,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: _bg,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        child: const Text('View NFT'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 132,
+                  height: 178,
+                  child: Hero(
+                    tag: 'nft-${listing.id}',
+                    child: _NftArtwork(listing: listing),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DropHero extends StatelessWidget {
+  const _DropHero();
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9DAB5),
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(32),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_orange, _primary, Color(0xFF151724)],
+        ),
       ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _GlassChip(label: 'Mint window opens soon'),
+          SizedBox(height: 34),
+          Text(
+            'Neon Samurai season two',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 30,
+              fontWeight: FontWeight.w900,
+              height: 1.05,
+            ),
+          ),
+          SizedBox(height: 10),
+          Text(
+            'Early access list, reserve pricing, and reveal mechanics are ready for Supabase edge functions.',
+            style: TextStyle(color: Color(0xFFE8EAFF), height: 1.45),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ListingCard extends StatelessWidget {
+  const _ListingCard({
+    required this.listing,
+    this.onTap,
+    this.onFavorite,
+  });
+
+  final NftListing listing;
+  final VoidCallback? onTap;
+  final VoidCallback? onFavorite;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(26),
+      child: Container(
+        padding: const EdgeInsets.all(11),
+        decoration: _panelDecoration(radius: 26),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Stack(
+                children: [
+                  Positioned.fill(child: _NftArtwork(listing: listing)),
+                  if (onFavorite != null)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: _RoundIconButton(
+                        icon: listing.isFavorite
+                            ? Icons.favorite
+                            : Icons.favorite_border,
+                        color: listing.isFavorite ? Colors.redAccent : Colors.white,
+                        onTap: onFavorite!,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              listing.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              listing.collectionName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: _muted, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text(
+                  _eth(listing.priceEth),
+                  style: TextStyle(
+                    color: Color(listing.accentColor),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  listing.endsIn,
+                  style: const TextStyle(color: _muted, fontSize: 11),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WideListingCard extends StatelessWidget {
+  const _WideListingCard({required this.listing, required this.onTap});
+
+  final NftListing listing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: _panelDecoration(radius: 24),
+        child: Row(
+          children: [
+            SizedBox(width: 82, height: 82, child: _NftArtwork(listing: listing)),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    listing.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    listing.collectionName,
+                    style: const TextStyle(color: _muted),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _eth(listing.priceEth),
+                    style: TextStyle(
+                      color: Color(listing.accentColor),
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: _muted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NftArtwork extends StatelessWidget {
+  const _NftArtwork({required this.listing, this.height});
+
+  final NftListing listing;
+  final double? height;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Color(listing.accentColor);
+
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: RadialGradient(
+          center: const Alignment(-.45, -.55),
+          radius: 1.2,
+          colors: [
+            Colors.white.withValues(alpha: .95),
+            accent,
+            Color.lerp(accent, _bg, .72) ?? _bg,
+            const Color(0xFF090A10),
+          ],
+        ),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: 16,
+            top: 16,
+            child: Icon(
+              Icons.auto_awesome,
+              color: Colors.white.withValues(alpha: .55),
+              size: 34,
+            ),
+          ),
+          Center(
+            child: Icon(
+              _artIcon(listing.category),
+              color: Colors.white.withValues(alpha: .92),
+              size: height == null ? 58 : 112,
+            ),
+          ),
+          Positioned(
+            left: 12,
+            bottom: 12,
+            child: _GlassChip(label: listing.rarity),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CollectionCard extends StatelessWidget {
+  const _CollectionCard({required this.collection});
+
+  final NftCollection collection;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 230,
+      padding: const EdgeInsets.all(14),
+      decoration: _panelDecoration(radius: 26),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 74,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: LinearGradient(
+                colors: [Color(collection.accentColor), _surfaceHigh],
+              ),
+            ),
+            child: Center(
+              child: Icon(
+                Icons.blur_circular,
+                color: Colors.white.withValues(alpha: .9),
+                size: 42,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  collection.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if (collection.verified)
+                const Icon(Icons.verified, color: _cyan, size: 18),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(collection.creator, style: const TextStyle(color: _muted)),
+          const Spacer(),
+          Text(
+            'Floor ${_eth(collection.floorPriceEth)}',
+            style: TextStyle(
+              color: Color(collection.accentColor),
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CollectionRow extends StatelessWidget {
+  const _CollectionRow({required this.collection});
+
+  final NftCollection collection;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: _panelDecoration(radius: 24),
       child: Row(
         children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Color(collection.accentColor),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: const Icon(Icons.diamond_outlined, color: Colors.white),
+          ),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _MiniPill(label: 'Daily Tip'),
-                const SizedBox(height: 10),
-                Text(
-                  'Try bees-wax wraps',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        collection.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    if (collection.verified) ...[
+                      const SizedBox(width: 6),
+                      const Icon(Icons.verified, color: _cyan, size: 16),
+                    ],
+                  ],
                 ),
-                const SizedBox(height: 6),
-                const Text(
-                  'A sustainable alternative to plastic film for keeping food fresh.',
+                const SizedBox(height: 4),
+                Text(
+                  '${collection.items} items - ${collection.category}',
+                  style: const TextStyle(color: _muted),
                 ),
               ],
             ),
           ),
-          Container(
-            width: 76,
-            height: 76,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEBC594),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.eco_outlined, size: 34),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WeeklyProgressCard extends StatelessWidget {
-  const _WeeklyProgressCard({required this.impact});
-
-  final ImpactSnapshot impact;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                'Weekly Progress',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              const Spacer(),
-              _MiniPill(label: '+${impact.streakDays}% vs last week'),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Waste reduced this week',
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-          const SizedBox(height: 18),
-          SizedBox(height: 88, child: _MiniBarChart(values: impact.weeklyProgress)),
-        ],
-      ),
-    );
-  }
-}
-
-class _EcoScoreCard extends StatelessWidget {
-  const _EcoScoreCard({required this.score});
-
-  final int score;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 22),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: .65), width: 2),
-            ),
-            child: Center(
-              child: Text(
-                '$score',
+                _eth(collection.floorPriceEth),
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 26,
                   fontWeight: FontWeight.w900,
                 ),
               ),
+              Text(
+                '${collection.volumeEth.toStringAsFixed(0)} ETH vol',
+                style: const TextStyle(color: _muted, fontSize: 12),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityTile extends StatelessWidget {
+  const _ActivityTile(this.activity);
+
+  final MarketActivity activity;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: _panelDecoration(radius: 22),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: _primary.withValues(alpha: .16),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(_activityIcon(activity.iconName), color: _primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  activity.title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(activity.subtitle, style: const TextStyle(color: _muted)),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
-          const Text(
-            'ECO SCORE',
-            style: TextStyle(
+          Text(
+            _eth(activity.valueEth),
+            style: const TextStyle(
               color: Colors.white,
-              fontSize: 11,
               fontWeight: FontWeight.w900,
             ),
           ),
-          const Text(
-            'Top 5% of users',
-            style: TextStyle(color: Color(0xFFE1EADB), fontSize: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({
+    required this.title,
+    required this.value,
+    required this.icon,
+    required this.accent,
+  });
+
+  final String title;
+  final String value;
+  final IconData icon;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _panelDecoration(radius: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: accent),
+          const SizedBox(height: 14),
+          Text(title, style: const TextStyle(color: _muted)),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniTrendChart extends StatelessWidget {
+  const _MiniTrendChart({required this.values});
+
+  final List<int> values;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxValue = values.isEmpty
+        ? 1
+        : values.reduce((value, element) => value > element ? value : element);
+
+    return Container(
+      height: 118,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _bg.withValues(alpha: .42),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: values
+            .map(
+              (value) => Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: FractionallySizedBox(
+                    heightFactor: (value / maxValue).clamp(.12, 1).toDouble(),
+                    alignment: Alignment.bottomCenter,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(99),
+                        gradient: const LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [_primary, _cyan],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+}
+
+class _DetailMetric extends StatelessWidget {
+  const _DetailMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: _panelDecoration(radius: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: _muted, fontSize: 12)),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ],
       ),
@@ -999,10 +1570,10 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Text(
           title,
-          style: Theme.of(context)
-              .textTheme
-              .titleLarge
-              ?.copyWith(fontWeight: FontWeight.w900),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+              ),
         ),
         const Spacer(),
         if (action != null)
@@ -1012,680 +1583,24 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _SmallProductTile extends StatelessWidget {
-  const _SmallProductTile({required this.product, required this.onTap});
+class _GlassChip extends StatelessWidget {
+  const _GlassChip({required this.label});
 
-  final EcoProduct product;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: _cardDecoration(radius: 22),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: _ProductVisual(product: product)),
-            const SizedBox(height: 8),
-            Text(
-              product.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              _money(product.price),
-              style: TextStyle(color: Colors.grey[700], fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MarketplaceProductCard extends StatelessWidget {
-  const _MarketplaceProductCard({
-    required this.product,
-    required this.onFavorite,
-    required this.onTap,
-  });
-
-  final EcoProduct product;
-  final VoidCallback onFavorite;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.primary;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
-      child: Container(
-        decoration: _cardDecoration(radius: 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(child: _ProductVisual(product: product)),
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: IconButton.filledTonal(
-                      onPressed: onFavorite,
-                      icon: Icon(
-                        product.isFavorite
-                            ? Icons.favorite
-                            : Icons.favorite_border,
-                        color: product.isFavorite
-                            ? const Color(0xFFD86B64)
-                            : color,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 8,
-                    bottom: 8,
-                    child: _MiniPill(label: product.impactLabel),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(_money(product.price)),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: onTap,
-                      child: const Text('View Details'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _WideProductCard extends StatelessWidget {
-  const _WideProductCard({required this.product, required this.onTap});
-
-  final EcoProduct product;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: _cardDecoration(radius: 24),
-        child: Row(
-          children: [
-            SizedBox(width: 92, height: 92, child: _ProductVisual(product: product)),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.name,
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(product.brandName, style: TextStyle(color: Colors.grey[600])),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Text(
-                        _money(product.price),
-                        style: const TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      const Spacer(),
-                      _EcoBadge(score: product.ecoScore),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ProductVisual extends StatelessWidget {
-  const _ProductVisual({required this.product});
-
-  final EcoProduct product;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: _productColor(product.category),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Center(
-        child: Icon(
-          _categoryIcon(product.category),
-          color: const Color(0xFF3E5F45),
-          size: 46,
-        ),
-      ),
-    );
-  }
-}
-
-class _LargeProductVisual extends StatelessWidget {
-  const _LargeProductVisual({required this.product});
-
-  final EcoProduct product;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 360,
-      decoration: BoxDecoration(
-        color: const Color(0xFFD9E0D2),
-        borderRadius: BorderRadius.circular(28),
-        image: product.imageUrl.isEmpty
-            ? null
-            : DecorationImage(
-                image: NetworkImage(product.imageUrl),
-                fit: BoxFit.cover,
-              ),
-      ),
-      child: product.imageUrl.isEmpty
-          ? Center(
-              child: Icon(
-                _categoryIcon(product.category),
-                color: Theme.of(context).colorScheme.primary,
-                size: 120,
-              ),
-            )
-          : null,
-    );
-  }
-}
-
-class _ImpactHero extends StatelessWidget {
-  const _ImpactHero({required this.impact});
-
-  final ImpactSnapshot impact;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary,
-        borderRadius: BorderRadius.circular(26),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Impact Tracker',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'You have saved ${impact.co2EquivalentLabel} of plastic this month. Keep it up.',
-            style: const TextStyle(color: Color(0xFFE6EFE2)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-extension on ImpactSnapshot {
-  String get co2EquivalentLabel {
-    final total = (plasticWasteReduction + packagingReduction) / 10;
-    return '${total.toStringAsFixed(1)}kg';
-  }
-}
-
-class _MetricCard extends StatelessWidget {
-  const _MetricCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.highlighted = false,
-  });
-
-  final IconData icon;
   final String label;
-  final String value;
-  final bool highlighted;
-
-  @override
-  Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: highlighted ? primary : Colors.white,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: highlighted ? Colors.white : primary),
-          const SizedBox(height: 10),
-          Text(
-            label,
-            style: TextStyle(color: highlighted ? Colors.white : Colors.grey[700]),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              color: highlighted ? Colors.white : const Color(0xFF20251F),
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WasteReductionChart extends StatelessWidget {
-  const _WasteReductionChart({required this.values});
-
-  final List<int> values;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Waste Reduction',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              const Spacer(),
-              _MiniPill(label: 'Weekly'),
-              const SizedBox(width: 8),
-              _MiniPill(label: 'Monthly', muted: true),
-            ],
-          ),
-          const SizedBox(height: 18),
-          SizedBox(height: 150, child: _MiniBarChart(values: values, showLabels: true)),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniBarChart extends StatelessWidget {
-  const _MiniBarChart({required this.values, this.showLabels = false});
-
-  final List<int> values;
-  final bool showLabels;
-
-  @override
-  Widget build(BuildContext context) {
-    final maxValue = values.isEmpty ? 1 : values.reduce((a, b) => a > b ? a : b);
-    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: List.generate(values.length, (index) {
-        final heightFactor = values[index] / maxValue;
-        return Expanded(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: FractionallySizedBox(
-                    heightFactor: heightFactor.clamp(.14, 1).toDouble(),
-                    child: Container(
-                      width: 22,
-                      decoration: BoxDecoration(
-                        color: index == 4
-                            ? Theme.of(context).colorScheme.primary
-                            : const Color(0xFFD5DDD1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              if (showLabels) ...[
-                const SizedBox(height: 8),
-                Text(labels[index], style: const TextStyle(fontSize: 10)),
-              ],
-            ],
-          ),
-        );
-      }),
-    );
-  }
-}
-
-class _ActivityList extends StatelessWidget {
-  const _ActivityList({required this.activities});
-
-  final List<EcoActivity> activities;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SectionHeader(title: 'Recent Activity'),
-        const SizedBox(height: 10),
-        ...activities.map(
-          (activity) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: _cardDecoration(radius: 20),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor:
-                        Theme.of(context).colorScheme.primary.withValues(alpha: .12),
-                    child: Icon(
-                      _activityIcon(activity.iconName),
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          activity.title,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        Text(
-                          activity.subtitle,
-                          style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _BrandSpotlight extends StatelessWidget {
-  const _BrandSpotlight({required this.brand});
-
-  final EcoBrand brand;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 26,
-            backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: .12),
-            child: const Icon(Icons.storefront_outlined),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(brand.name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                Text(brand.tagline, style: TextStyle(color: Colors.grey[600])),
-              ],
-            ),
-          ),
-          if (brand.verified) const Icon(Icons.verified, color: Color(0xFF4B7052)),
-        ],
-      ),
-    );
-  }
-}
-
-class _BrandCard extends StatelessWidget {
-  const _BrandCard({required this.brand});
-
-  final EcoBrand brand;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 210,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.eco, color: Colors.white),
-          const Spacer(),
-          Text(
-            brand.name,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          Text(
-            brand.tagline,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Color(0xFFE6EFE2)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MilestoneCard extends StatelessWidget {
-  const _MilestoneCard({required this.tip});
-
-  final EcoTip tip;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Next Milestone: ${tip.title}',
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 6),
-                Text(tip.body, style: TextStyle(color: Colors.grey[700])),
-              ],
-            ),
-          ),
-          CircleAvatar(
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            child: const Icon(Icons.shopping_cart_outlined, color: Colors.white),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MarketplaceHero extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEAF0E4),
-        borderRadius: BorderRadius.circular(26),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Shop consciously',
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Browse curated zero-waste brands, plastic-free products, and refill essentials.',
-                ),
-              ],
-            ),
-          ),
-          const Icon(Icons.storefront_outlined, size: 64),
-        ],
-      ),
-    );
-  }
-}
-
-class _ShippingNote extends StatelessWidget {
-  const _ShippingNote({required this.note});
-
-  final String note;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEAF0E4),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.local_shipping_outlined),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              note,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EcoBadge extends StatelessWidget {
-  const _EcoBadge({required this.score});
-
-  final int score;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary.withValues(alpha: .12),
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.eco, size: 14, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 4),
-          Text(
-            '$score',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniPill extends StatelessWidget {
-  const _MiniPill({required this.label, this.muted = false});
-
-  final String label;
-  final bool muted;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: muted
-            ? const Color(0xFFF0F2EE)
-            : Theme.of(context).colorScheme.primary.withValues(alpha: .12),
-        borderRadius: BorderRadius.circular(99),
+        color: Colors.white.withValues(alpha: .14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: .18)),
       ),
       child: Text(
         label,
-        style: TextStyle(
-          color: muted ? Colors.grey[700] : Theme.of(context).colorScheme.primary,
+        style: const TextStyle(
+          color: Colors.white,
           fontSize: 11,
           fontWeight: FontWeight.w800,
         ),
@@ -1694,26 +1609,89 @@ class _MiniPill extends StatelessWidget {
   }
 }
 
-class _ProfileAction extends StatelessWidget {
-  const _ProfileAction({required this.icon, required this.label});
+class _Pill extends StatelessWidget {
+  const _Pill({required this.label, required this.color, this.icon});
 
-  final IconData icon;
   final String label;
+  final Color color;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: _cardDecoration(radius: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .16),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: .32)),
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+          if (icon != null) ...[
+            Icon(icon, color: color, size: 14),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            label,
+            style: TextStyle(color: color, fontWeight: FontWeight.w800),
           ),
-          const Icon(Icons.chevron_right),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoundIconButton extends StatelessWidget {
+  const _RoundIconButton({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: .28),
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, color: color, size: 18),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyWatchlist extends StatelessWidget {
+  const _EmptyWatchlist();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: _panelDecoration(radius: 26),
+      child: const Column(
+        children: [
+          Icon(Icons.favorite_border, color: _primary, size: 42),
+          SizedBox(height: 12),
+          Text(
+            'Your watchlist is empty',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+          ),
+          SizedBox(height: 6),
+          Text(
+            'Tap the heart on listings to track auctions here.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: _muted),
+          ),
         ],
       ),
     );
@@ -1729,64 +1707,62 @@ class _ErrorState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(24),
       children: [
-        const SizedBox(height: 140),
-        const Icon(Icons.cloud_off_outlined, size: 54),
-        const SizedBox(height: 12),
-        Text(message, textAlign: TextAlign.center),
+        const SizedBox(height: 120),
+        const Icon(Icons.cloud_off_outlined, color: _primary, size: 56),
         const SizedBox(height: 16),
-        FilledButton(onPressed: onRetry, child: const Text('Retry')),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Center(child: FilledButton(onPressed: onRetry, child: const Text('Retry'))),
       ],
     );
   }
 }
 
-BoxDecoration _cardDecoration({double radius = 24}) {
+BoxDecoration _panelDecoration({double radius = 28}) {
   return BoxDecoration(
-    color: Colors.white,
+    color: _surface,
     borderRadius: BorderRadius.circular(radius),
+    border: Border.all(color: _line),
     boxShadow: [
       BoxShadow(
-        color: Colors.black.withValues(alpha: .045),
-        blurRadius: 20,
+        color: Colors.black.withValues(alpha: .18),
+        blurRadius: 18,
         offset: const Offset(0, 12),
       ),
     ],
   );
 }
 
-Color _productColor(String category) {
-  return switch (category) {
-    'Cleaning' => const Color(0xFFD5DFD1),
-    'Drinkware' => const Color(0xFFE3D1AD),
-    'Grocery' => const Color(0xFFF1E4CD),
-    'Kitchen' => const Color(0xFFE6D9C2),
-    'Personal Care' => const Color(0xFFDCE8D7),
-    _ => const Color(0xFFEAF0E4),
-  };
+String _eth(double value) => '${value.toStringAsFixed(2)} ETH';
+
+IconData _artIcon(String category) {
+  switch (category.toLowerCase()) {
+    case 'gaming':
+      return Icons.sports_esports_outlined;
+    case 'pfp':
+      return Icons.face_retouching_natural;
+    default:
+      return Icons.blur_on;
+  }
 }
 
-IconData _categoryIcon(String category) {
-  return switch (category) {
-    'Cleaning' => Icons.cleaning_services_outlined,
-    'Drinkware' => Icons.coffee_outlined,
-    'Grocery' => Icons.shopping_basket_outlined,
-    'Kitchen' => Icons.kitchen_outlined,
-    'Personal Care' => Icons.spa_outlined,
-    _ => Icons.eco_outlined,
-  };
-}
-
-IconData _activityIcon(String iconName) {
-  return switch (iconName) {
-    'bag' => Icons.shopping_bag_outlined,
-    'bottle' => Icons.water_drop_outlined,
-    'compost' => Icons.compost_outlined,
-    _ => Icons.eco_outlined,
-  };
-}
-
-String _money(double value) {
-  return '\$${value.toStringAsFixed(2)}';
+IconData _activityIcon(String name) {
+  switch (name) {
+    case 'bolt':
+      return Icons.bolt;
+    case 'verified':
+      return Icons.verified;
+    default:
+      return Icons.sell_outlined;
+  }
 }

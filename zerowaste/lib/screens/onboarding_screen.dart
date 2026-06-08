@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
-import '../services/eco_repository.dart';
+import '../services/marketplace_repository.dart';
 import 'login_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -11,7 +11,7 @@ class OnboardingScreen extends StatefulWidget {
     required this.authService,
   });
 
-  final EcoRepository repository;
+  final MarketplaceRepository repository;
   final AuthService authService;
 
   @override
@@ -24,25 +24,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   static const _slides = [
     _OnboardingSlide(
-      title: 'Eco-friendly discovery',
+      eyebrow: 'Curated drops',
+      title: 'Discover rare digital art before it trends',
       description:
-          'Find plastic-free alternatives and sustainable brands that fit your lifestyle effortlessly.',
-      footer: 'Welcome to your eco journey',
-      icon: Icons.eco_outlined,
+          'Explore verified collections, featured auctions, and live floor prices from one cinematic marketplace.',
+      icon: Icons.auto_awesome,
+      accent: Color(0xFF8B5CF6),
     ),
     _OnboardingSlide(
-      title: 'Shop with confidence',
+      eyebrow: 'Bid smarter',
+      title: 'Track bids, rarity, and chain data at a glance',
       description:
-          'Browse verified makers, compare impact notes, and save your favorite zero-waste swaps.',
-      footer: 'Better choices, beautifully simple',
-      icon: Icons.verified_outlined,
+          'Review current ask, highest bid, sale history, token traits, and timed auctions before you collect.',
+      icon: Icons.bolt,
+      accent: Color(0xFF22D3EE),
     ),
     _OnboardingSlide(
-      title: 'Build low-waste habits',
+      eyebrow: 'Your portfolio',
+      title: 'Build a watchlist that follows your wallet',
       description:
-          'Get practical tips for refills, repairs, and reusable routines you can actually keep.',
-      footer: 'Small swaps make a big difference',
-      icon: Icons.recycling_outlined,
+          'Save favorite NFTs, monitor portfolio value, and connect Supabase auth for a production-ready account layer.',
+      icon: Icons.account_balance_wallet_outlined,
+      accent: Color(0xFFFF7A59),
     ),
   ];
 
@@ -70,41 +73,36 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
 
     _controller.nextPage(
-      duration: const Duration(milliseconds: 280),
-      curve: Curves.easeOut,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
           child: Column(
             children: [
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: colorScheme.primary.withValues(alpha: .18),
-                    child: Icon(Icons.explore, color: colorScheme.primary),
-                  ),
-                  const SizedBox(width: 10),
+                  const _BrandMark(size: 42),
+                  const SizedBox(width: 12),
                   Text(
-                    'EcoDiscover',
+                    'NovaNFT',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: colorScheme.primary,
-                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -.4,
                         ),
                   ),
                   const Spacer(),
                   TextButton(onPressed: _openLogin, child: const Text('Skip')),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 18),
               Expanded(
                 child: PageView.builder(
                   controller: _controller,
@@ -121,13 +119,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   _slides.length,
                   (index) => AnimatedContainer(
                     duration: const Duration(milliseconds: 220),
-                    width: index == _page ? 28 : 8,
+                    width: index == _page ? 34 : 8,
                     height: 8,
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
                     decoration: BoxDecoration(
                       color: index == _page
-                          ? colorScheme.primary
-                          : colorScheme.primary.withValues(alpha: .22),
+                          ? _slides[index].accent
+                          : Colors.white.withValues(alpha: .16),
                       borderRadius: BorderRadius.circular(99),
                     ),
                   ),
@@ -141,10 +139,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 18),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
+                      borderRadius: BorderRadius.circular(28),
                     ),
                   ),
-                  child: Text(_page == _slides.length - 1 ? 'Start' : 'Next'),
+                  child: Text(
+                    _page == _slides.length - 1
+                        ? 'Enter marketplace'
+                        : 'Continue',
+                  ),
                 ),
               ),
             ],
@@ -162,91 +164,40 @@ class _SlideView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Column(
       children: [
         Expanded(
           child: Center(
-            child: Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(maxHeight: 360),
-              decoration: BoxDecoration(
-                color: const Color(0xFFDDE6D7),
-                borderRadius: BorderRadius.circular(34),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: .08),
-                    blurRadius: 24,
-                    offset: const Offset(0, 16),
-                  ),
-                ],
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Positioned(
-                    right: 32,
-                    top: 32,
-                    child: Icon(
-                      slide.icon,
-                      size: 84,
-                      color: colorScheme.primary.withValues(alpha: .28),
-                    ),
-                  ),
-                  const Positioned(left: 44, bottom: 86, child: _Brush()),
-                  Positioned(
-                    right: 48,
-                    bottom: 70,
-                    child: _ReusableBag(color: colorScheme.primary),
-                  ),
-                  Positioned(
-                    bottom: 52,
-                    child: Container(
-                      width: 84,
-                      height: 92,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: .62),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: Colors.white),
-                      ),
-                      child: Icon(
-                        Icons.water_drop_outlined,
-                        color: colorScheme.primary,
-                        size: 42,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            child: _OnboardingArtwork(slide: slide),
           ),
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: 30),
+        Text(
+          slide.eyebrow.toUpperCase(),
+          style: TextStyle(
+            color: slide.accent,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.4,
+          ),
+        ),
+        const SizedBox(height: 10),
         Text(
           slide.title,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF222921),
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                height: 1.05,
               ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         Text(
           slide.description,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: const Color(0xFF667064),
-                height: 1.45,
-              ),
-        ),
-        const SizedBox(height: 28),
-        Text(
-          '${slide.footer} - grow greener',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: colorScheme.primary,
-                fontWeight: FontWeight.w800,
+                color: const Color(0xFFA5ABC0),
+                height: 1.5,
               ),
         ),
       ],
@@ -254,60 +205,231 @@ class _SlideView extends StatelessWidget {
   }
 }
 
-class _Brush extends StatelessWidget {
-  const _Brush();
+class _OnboardingArtwork extends StatelessWidget {
+  const _OnboardingArtwork({required this.slide});
+
+  final _OnboardingSlide slide;
 
   @override
   Widget build(BuildContext context) {
-    return Transform.rotate(
-      angle: -.09,
-      child: Container(
-        width: 12,
-        height: 122,
-        decoration: BoxDecoration(
-          color: const Color(0xFFC89A5D),
-          borderRadius: BorderRadius.circular(99),
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(maxHeight: 390),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(36),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            slide.accent.withValues(alpha: .95),
+            const Color(0xFF1D2030),
+            const Color(0xFF0E1019),
+          ],
         ),
+        boxShadow: [
+          BoxShadow(
+            color: slide.accent.withValues(alpha: .28),
+            blurRadius: 34,
+            offset: const Offset(0, 22),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -40,
+            top: -30,
+            child: _GlowOrb(color: Colors.white.withValues(alpha: .18)),
+          ),
+          Positioned(
+            left: 26,
+            top: 26,
+            child: _GlassPill(icon: slide.icon, label: 'Live auction'),
+          ),
+          const Positioned(
+            right: 24,
+            bottom: 28,
+            child: _BidCard(),
+          ),
+          Center(
+            child: Transform.rotate(
+              angle: -.08,
+              child: _NftPreviewCard(accent: slide.accent),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _ReusableBag extends StatelessWidget {
-  const _ReusableBag({required this.color});
+class _NftPreviewCard extends StatelessWidget {
+  const _NftPreviewCard({required this.accent});
+
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 190,
+      height: 248,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF171927),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Colors.white.withValues(alpha: .14)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .28),
+            blurRadius: 26,
+            offset: const Offset(0, 18),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(22),
+                gradient: RadialGradient(
+                  colors: [
+                    Colors.white.withValues(alpha: .95),
+                    accent,
+                    const Color(0xFF0E1019),
+                  ],
+                ),
+              ),
+              child: const Center(
+                child: Icon(Icons.blur_on, color: Colors.white, size: 70),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Ape Nebula #214',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '4.82 ETH',
+            style: TextStyle(color: accent, fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BidCard extends StatelessWidget {
+  const _BidCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 132,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .13),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: .18)),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Highest bid', style: TextStyle(color: Color(0xFFC8CDDD))),
+          SizedBox(height: 4),
+          Text(
+            '4.55 ETH',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GlassPill extends StatelessWidget {
+  const _GlassPill({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: .18)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white, size: 16),
+          const SizedBox(width: 7),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GlowOrb extends StatelessWidget {
+  const _GlowOrb({required this.color});
 
   final Color color;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 92,
-      height: 110,
+      width: 170,
+      height: 170,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+    );
+  }
+}
+
+class _BrandMark extends StatelessWidget {
+  const _BrandMark({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
       decoration: BoxDecoration(
-        color: const Color(0xFFF5EEE4),
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-          bottomLeft: Radius.circular(14),
-          bottomRight: Radius.circular(14),
+        borderRadius: BorderRadius.circular(size * .32),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF8B5CF6), Color(0xFF22D3EE)],
         ),
-        border: Border.all(color: Colors.white, width: 2),
       ),
-      child: Icon(Icons.local_mall_outlined, color: color, size: 40),
+      child: const Icon(Icons.diamond_outlined, color: Colors.white),
     );
   }
 }
 
 class _OnboardingSlide {
   const _OnboardingSlide({
+    required this.eyebrow,
     required this.title,
     required this.description,
-    required this.footer,
     required this.icon,
+    required this.accent,
   });
 
+  final String eyebrow;
   final String title;
   final String description;
-  final String footer;
   final IconData icon;
+  final Color accent;
 }

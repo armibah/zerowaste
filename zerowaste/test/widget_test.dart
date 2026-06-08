@@ -1,26 +1,20 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:zerowaste/app.dart';
 import 'package:zerowaste/services/auth_service.dart';
-import 'package:zerowaste/services/eco_repository.dart';
+import 'package:zerowaste/services/marketplace_repository.dart';
 
 void main() {
-  testWidgets('Onboarding screen loads', (WidgetTester tester) async {
+  testWidgets('NFT marketplace onboarding loads', (WidgetTester tester) async {
     await tester.pumpWidget(
-      EcoDiscoverApp(
-        repository: DemoEcoRepository(),
+      NftMarketApp(
+        repository: DemoMarketplaceRepository(),
         authService: DemoAuthService(),
       ),
     );
 
-    expect(find.text('Welcome to EcoDiscover'), findsOneWidget);
-    expect(find.text('Get started'), findsOneWidget);
+    expect(find.text('NovaNFT'), findsOneWidget);
+    expect(find.text('Discover rare digital art before it trends'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
   });
 }
