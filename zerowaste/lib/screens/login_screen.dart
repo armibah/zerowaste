@@ -23,8 +23,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController(text: 'Nature Friend');
   final _emailController = TextEditingController(text: 'nature@example.com');
-  final _passwordController = TextEditingController(text: 'ecodiscover');
-  final _confirmPasswordController = TextEditingController(text: 'ecodiscover');
+  final _passwordController = TextEditingController(text: 'zerowaste');
+  final _confirmPasswordController = TextEditingController(text: 'zerowaste');
 
   bool _creatingAccount = true;
   bool _showPassword = false;

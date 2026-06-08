@@ -94,7 +94,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    'EcoDiscover',
+                    'ZeroWaste',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           color: colorScheme.primary,
                           fontWeight: FontWeight.w800,
