@@ -1,11 +1,19 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../models/app_notification.dart';
 import '../models/eco_brand.dart';
 import '../models/eco_product.dart';
 import '../models/eco_tip.dart';
+import '../models/help_issue.dart';
 import '../models/impact_snapshot.dart';
+import '../models/order_preferences.dart';
 import '../services/auth_service.dart';
 import '../services/eco_repository.dart';
+import '../models/user_profile.dart';
+import '../models/waste_record.dart';
 import 'login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -26,22 +34,31 @@ class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
 
   List<EcoProduct> _products = [];
+  List<EcoProduct> _savedProducts = [];
   List<EcoBrand> _brands = [];
   List<EcoTip> _tips = [];
+  List<AppNotification> _notifications = [];
+  List<WasteRecord> _wasteRecords = [];
+  List<EcoScoreEntry> _scoreHistory = [];
   ImpactSnapshot? _impact;
+  UserProfile? _profile;
+  OrderPreferences? _orderPreferences;
   String _category = 'All';
   int _tab = 0;
   bool _loading = true;
   String? _error;
+  StreamSubscription<List<AppNotification>>? _notificationSubscription;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _watchNotifications();
   }
 
   @override
   void dispose() {
+    _notificationSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -54,16 +71,26 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final products = await widget.repository.fetchProducts();
+      final savedProducts = await widget.repository.fetchSavedProducts();
       final brands = await widget.repository.fetchBrands();
       final tips = await widget.repository.fetchTips();
       final impact = await widget.repository.fetchImpactSnapshot();
+      final profile = await widget.repository.fetchUserProfile();
+      final orderPreferences = await widget.repository.fetchOrderPreferences();
+      final wasteRecords = await widget.repository.fetchWasteRecords();
+      final scoreHistory = await widget.repository.fetchEcoScoreHistory();
 
       if (!mounted) return;
       setState(() {
         _products = products;
+        _savedProducts = savedProducts;
         _brands = brands;
         _tips = tips;
         _impact = impact;
+        _profile = profile;
+        _orderPreferences = orderPreferences;
+        _wasteRecords = wasteRecords;
+        _scoreHistory = scoreHistory;
         _loading = false;
       });
     } catch (_) {
@@ -73,6 +100,22 @@ class _HomeScreenState extends State<HomeScreen> {
         _loading = false;
       });
     }
+  }
+
+  void _watchNotifications() {
+    _notificationSubscription?.cancel();
+    _notificationSubscription = widget.repository.watchNotifications().listen(
+      (notifications) {
+        if (!mounted) return;
+        setState(() => _notifications = notifications);
+      },
+      onError: (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not load notifications.')),
+        );
+      },
+    );
   }
 
   Future<void> _toggleFavorite(EcoProduct product) async {
@@ -86,6 +129,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 : item,
           )
           .toList();
+      _savedProducts = nextFavorite
+          ? [
+              ..._savedProducts,
+              product.copyWith(isFavorite: true),
+            ]
+          : _savedProducts.where((item) => item.id != product.id).toList();
     });
 
     try {
@@ -103,6 +152,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   : item,
             )
             .toList();
+        _savedProducts = product.isFavorite
+            ? [
+                ..._savedProducts.where((item) => item.id != product.id),
+                product,
+              ]
+            : _savedProducts.where((item) => item.id != product.id).toList();
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not update favorite.')),
@@ -155,9 +210,142 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _pickProfilePhoto() async {
+    try {
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 900,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+
+      final bytes = await image.readAsBytes();
+      if (bytes.length > 2 * 1024 * 1024) {
+        _showSnack('Profile photo must be smaller than 2 MB.');
+        return;
+      }
+
+      final extension = image.name.contains('.')
+          ? image.name.split('.').last.toLowerCase()
+          : 'jpg';
+      if (!['jpg', 'jpeg', 'png', 'webp'].contains(extension)) {
+        _showSnack('Only JPG, PNG, and WEBP images are supported.');
+        return;
+      }
+
+      final profile = await widget.repository.uploadProfilePhoto(
+        bytes: bytes,
+        extension: extension,
+      );
+      if (!mounted) return;
+      setState(() => _profile = profile);
+      _showSnack('Profile photo updated.');
+    } catch (error) {
+      _showSnack('Could not upload profile photo: $error');
+    }
+  }
+
+  Future<void> _deleteProfilePhoto() async {
+    try {
+      final profile = await widget.repository.deleteProfilePhoto();
+      if (!mounted) return;
+      setState(() => _profile = profile);
+      _showSnack('Profile photo removed.');
+    } catch (error) {
+      _showSnack('Could not delete profile photo: $error');
+    }
+  }
+
+  Future<void> _markNotification(AppNotification notification, bool read) async {
+    setState(() {
+      _notifications = _notifications
+          .map(
+            (item) => item.id == notification.id
+                ? item.copyWith(read: read)
+                : item,
+          )
+          .toList();
+    });
+    try {
+      await widget.repository.markNotification(
+        notificationId: notification.id,
+        read: read,
+      );
+    } catch (_) {
+      _showSnack('Could not update notification.');
+    }
+  }
+
+  void _openNotifications() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _NotificationsSheet(
+        notifications: _notifications,
+        onToggleRead: _markNotification,
+      ),
+    );
+  }
+
+  Future<void> _openOrderSettings() async {
+    final preferences = _orderPreferences;
+    if (preferences == null) return;
+    final updated = await Navigator.of(context).push<OrderPreferences>(
+      MaterialPageRoute(
+        builder: (_) => OrderSettingsScreen(
+          preferences: preferences,
+          onSave: widget.repository.saveOrderPreferences,
+        ),
+      ),
+    );
+    if (updated != null && mounted) {
+      setState(() => _orderPreferences = updated);
+      _showSnack('Order preferences saved.');
+    }
+  }
+
+  Future<void> _openHelpCenter() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => HelpCenterScreen(
+          email: _profile?.email ?? widget.authService.currentEmail ?? '',
+          onSubmit: widget.repository.submitHelpIssue,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addWasteRecord(WasteRecord record) async {
+    try {
+      await widget.repository.addWasteRecord(record);
+      final impact = await widget.repository.fetchImpactSnapshot();
+      final records = await widget.repository.fetchWasteRecords();
+      final scoreHistory = await widget.repository.fetchEcoScoreHistory();
+      if (!mounted) return;
+      setState(() {
+        _impact = impact;
+        _wasteRecords = records;
+        _scoreHistory = scoreHistory;
+      });
+      _showSnack('Waste tracker updated.');
+    } catch (error) {
+      _showSnack('Could not update waste tracker: $error');
+    }
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final impact = _impact;
+    final unreadCount =
+        _notifications.where((notification) => !notification.read).length;
 
     return Scaffold(
       body: SafeArea(
@@ -172,11 +360,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         _HomeTab(
                           products: _products,
+                          savedProducts: _savedProducts,
                           brands: _brands,
                           tips: _tips,
                           impact: impact,
+                          profile: _profile,
+                          unreadCount: unreadCount,
                           onOpenProducts: () => setState(() => _tab = 1),
                           onOpenProduct: _openProduct,
+                          onOpenNotifications: _openNotifications,
                           onSignOut: _signOut,
                         ),
                         _ProductsTab(
@@ -189,16 +381,36 @@ class _HomeScreenState extends State<HomeScreen> {
                               setState(() => _category = value),
                           onFavorite: _toggleFavorite,
                           onOpenProduct: _openProduct,
+                          unreadCount: unreadCount,
+                          onOpenNotifications: _openNotifications,
                         ),
-                        _TrackerTab(impact: impact),
+                        _TrackerTab(
+                          impact: impact,
+                          wasteRecords: _wasteRecords,
+                          scoreHistory: _scoreHistory,
+                          onAddRecord: _addWasteRecord,
+                          unreadCount: unreadCount,
+                          onOpenNotifications: _openNotifications,
+                        ),
                         _MarketplaceTab(
                           products: _products,
                           brands: _brands,
                           onOpenProduct: _openProduct,
+                          unreadCount: unreadCount,
+                          onOpenNotifications: _openNotifications,
                         ),
                         _ProfileTab(
-                          email: widget.authService.currentEmail,
+                          profile: _profile,
+                          savedProducts: _savedProducts,
                           impact: impact,
+                          orderPreferences: _orderPreferences,
+                          unreadCount: unreadCount,
+                          onPickPhoto: _pickProfilePhoto,
+                          onDeletePhoto: _deleteProfilePhoto,
+                          onOpenNotifications: _openNotifications,
+                          onOpenOrderSettings: _openOrderSettings,
+                          onOpenHelpCenter: _openHelpCenter,
+                          onOpenSavedProduct: _openProduct,
                           onSignOut: _signOut,
                         ),
                       ],
@@ -243,20 +455,28 @@ class _HomeScreenState extends State<HomeScreen> {
 class _HomeTab extends StatelessWidget {
   const _HomeTab({
     required this.products,
+    required this.savedProducts,
     required this.brands,
     required this.tips,
     required this.impact,
+    required this.profile,
+    required this.unreadCount,
     required this.onOpenProducts,
     required this.onOpenProduct,
+    required this.onOpenNotifications,
     required this.onSignOut,
   });
 
   final List<EcoProduct> products;
+  final List<EcoProduct> savedProducts;
   final List<EcoBrand> brands;
   final List<EcoTip> tips;
   final ImpactSnapshot impact;
+  final UserProfile? profile;
+  final int unreadCount;
   final VoidCallback onOpenProducts;
   final ValueChanged<EcoProduct> onOpenProduct;
+  final VoidCallback onOpenNotifications;
   final VoidCallback onSignOut;
 
   @override
@@ -271,7 +491,13 @@ class _HomeTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _TopBar(title: 'EcoDiscover', onSignOut: onSignOut),
+                _TopBar(
+                  title: 'EcoDiscover',
+                  avatarUrl: profile?.avatarUrl ?? '',
+                  unreadCount: unreadCount,
+                  onNotifications: onOpenNotifications,
+                  onSignOut: onSignOut,
+                ),
                 const SizedBox(height: 16),
                 _SearchField(hintText: 'Search eco-friendly essentials...'),
                 const SizedBox(height: 16),
@@ -316,6 +542,13 @@ class _HomeTab extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 26),
             child: Column(
               children: [
+                if (savedProducts.isNotEmpty) ...[
+                  _SavedProductsPreview(
+                    products: savedProducts,
+                    onOpenProduct: onOpenProduct,
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (brands.isNotEmpty) _BrandSpotlight(brand: brands.first),
                 const SizedBox(height: 12),
                 if (tips.isNotEmpty) _MilestoneCard(tip: tips.first),
@@ -338,6 +571,8 @@ class _ProductsTab extends StatelessWidget {
     required this.onCategoryChanged,
     required this.onFavorite,
     required this.onOpenProduct,
+    required this.unreadCount,
+    required this.onOpenNotifications,
   });
 
   final List<EcoProduct> products;
@@ -348,6 +583,8 @@ class _ProductsTab extends StatelessWidget {
   final ValueChanged<String> onCategoryChanged;
   final ValueChanged<EcoProduct> onFavorite;
   final ValueChanged<EcoProduct> onOpenProduct;
+  final int unreadCount;
+  final VoidCallback onOpenNotifications;
 
   @override
   Widget build(BuildContext context) {
@@ -358,7 +595,11 @@ class _ProductsTab extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
             child: Column(
               children: [
-                const _TopBar(title: 'EcoDiscover'),
+                _TopBar(
+                  title: 'EcoDiscover',
+                  unreadCount: unreadCount,
+                  onNotifications: onOpenNotifications,
+                ),
                 const SizedBox(height: 14),
                 TextField(
                   controller: searchController,
@@ -433,18 +674,34 @@ class _ProductsTab extends StatelessWidget {
 }
 
 class _TrackerTab extends StatelessWidget {
-  const _TrackerTab({required this.impact});
+  const _TrackerTab({
+    required this.impact,
+    required this.wasteRecords,
+    required this.scoreHistory,
+    required this.onAddRecord,
+    required this.unreadCount,
+    required this.onOpenNotifications,
+  });
 
   final ImpactSnapshot impact;
+  final List<WasteRecord> wasteRecords;
+  final List<EcoScoreEntry> scoreHistory;
+  final ValueChanged<WasteRecord> onAddRecord;
+  final int unreadCount;
+  final VoidCallback onOpenNotifications;
 
   @override
   Widget build(BuildContext context) {
     return CustomScrollView(
       slivers: [
-        const SliverToBoxAdapter(
+        SliverToBoxAdapter(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(18, 12, 18, 0),
-            child: _TopBar(title: 'EcoDiscover'),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+            child: _TopBar(
+              title: 'EcoDiscover',
+              unreadCount: unreadCount,
+              onNotifications: onOpenNotifications,
+            ),
           ),
         ),
         SliverToBoxAdapter(
@@ -487,8 +744,19 @@ class _TrackerTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 18),
                 _WasteReductionChart(values: impact.weeklyProgress),
+                const SizedBox(height: 18),
+                _TrackerTotals(impact: impact),
+                const SizedBox(height: 18),
+                _AddWasteRecordCard(onAddRecord: onAddRecord),
                 const SizedBox(height: 22),
                 _ActivityList(activities: impact.activities),
+                const SizedBox(height: 22),
+                _EcoScoreHistory(
+                  impact: impact,
+                  history: scoreHistory,
+                ),
+                const SizedBox(height: 22),
+                _WasteRecordList(records: wasteRecords),
               ],
             ),
           ),
@@ -503,20 +771,28 @@ class _MarketplaceTab extends StatelessWidget {
     required this.products,
     required this.brands,
     required this.onOpenProduct,
+    required this.unreadCount,
+    required this.onOpenNotifications,
   });
 
   final List<EcoProduct> products;
   final List<EcoBrand> brands;
   final ValueChanged<EcoProduct> onOpenProduct;
+  final int unreadCount;
+  final VoidCallback onOpenNotifications;
 
   @override
   Widget build(BuildContext context) {
     return CustomScrollView(
       slivers: [
-        const SliverToBoxAdapter(
+        SliverToBoxAdapter(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(18, 12, 18, 0),
-            child: _TopBar(title: 'Marketplace'),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+            child: _TopBar(
+              title: 'Marketplace',
+              unreadCount: unreadCount,
+              onNotifications: onOpenNotifications,
+            ),
           ),
         ),
         SliverToBoxAdapter(
@@ -574,32 +850,71 @@ class _MarketplaceTab extends StatelessWidget {
 
 class _ProfileTab extends StatelessWidget {
   const _ProfileTab({
-    required this.email,
+    required this.profile,
+    required this.savedProducts,
     required this.impact,
+    required this.orderPreferences,
+    required this.unreadCount,
+    required this.onPickPhoto,
+    required this.onDeletePhoto,
+    required this.onOpenNotifications,
+    required this.onOpenOrderSettings,
+    required this.onOpenHelpCenter,
+    required this.onOpenSavedProduct,
     required this.onSignOut,
   });
 
-  final String? email;
+  final UserProfile? profile;
+  final List<EcoProduct> savedProducts;
   final ImpactSnapshot impact;
+  final OrderPreferences? orderPreferences;
+  final int unreadCount;
+  final VoidCallback onPickPhoto;
+  final VoidCallback onDeletePhoto;
+  final VoidCallback onOpenNotifications;
+  final VoidCallback onOpenOrderSettings;
+  final VoidCallback onOpenHelpCenter;
+  final ValueChanged<EcoProduct> onOpenSavedProduct;
   final VoidCallback onSignOut;
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.primary;
-
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 26),
       children: [
-        const _TopBar(title: 'Profile'),
+        _TopBar(
+          title: 'Profile',
+          avatarUrl: profile?.avatarUrl ?? '',
+          unreadCount: unreadCount,
+          onNotifications: onOpenNotifications,
+        ),
         const SizedBox(height: 24),
-        CircleAvatar(
-          radius: 42,
-          backgroundColor: color.withValues(alpha: .14),
-          child: Icon(Icons.eco, color: color, size: 42),
+        Center(
+          child: _ProfileAvatar(
+            avatarUrl: profile?.avatarUrl ?? '',
+            radius: 48,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TextButton.icon(
+              onPressed: onPickPhoto,
+              icon: const Icon(Icons.upload_outlined),
+              label: const Text('Upload'),
+            ),
+            TextButton.icon(
+              onPressed:
+                  (profile?.avatarUrl ?? '').isEmpty ? null : onDeletePhoto,
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Delete'),
+            ),
+          ],
         ),
         const SizedBox(height: 14),
         Text(
-          'Eco Hero',
+          profile?.fullName ?? 'Eco Hero',
           textAlign: TextAlign.center,
           style: Theme.of(context)
               .textTheme
@@ -607,17 +922,44 @@ class _ProfileTab extends StatelessWidget {
               ?.copyWith(fontWeight: FontWeight.w900),
         ),
         Text(
-          email ?? 'nature@example.com',
+          profile?.email ?? 'nature@example.com',
           textAlign: TextAlign.center,
           style: TextStyle(color: Colors.grey[600]),
         ),
         const SizedBox(height: 18),
         _EcoScoreCard(score: impact.ecoScore),
+        const SizedBox(height: 12),
+        _TrackerTotals(impact: impact),
+        if (orderPreferences != null) ...[
+          const SizedBox(height: 14),
+          _OrderPreferencesSummary(preferences: orderPreferences!),
+        ],
         const SizedBox(height: 14),
-        _ProfileAction(icon: Icons.favorite_border, label: 'Saved Products'),
-        _ProfileAction(icon: Icons.receipt_long_outlined, label: 'Orders'),
-        _ProfileAction(icon: Icons.settings_outlined, label: 'Settings'),
-        _ProfileAction(icon: Icons.help_outline, label: 'Help Center'),
+        _SavedProductsPreview(
+          products: savedProducts,
+          onOpenProduct: onOpenSavedProduct,
+        ),
+        const SizedBox(height: 14),
+        _ProfileAction(
+          icon: Icons.favorite_border,
+          label: 'Saved Products (${savedProducts.length})',
+          onTap: () {},
+        ),
+        _ProfileAction(
+          icon: Icons.receipt_long_outlined,
+          label: 'Order Settings',
+          onTap: onOpenOrderSettings,
+        ),
+        _ProfileAction(
+          icon: Icons.help_outline,
+          label: 'Help Center',
+          onTap: onOpenHelpCenter,
+        ),
+        _ProfileAction(
+          icon: Icons.notifications_none,
+          label: 'Notifications ($unreadCount unread)',
+          onTap: onOpenNotifications,
+        ),
         const SizedBox(height: 12),
         FilledButton.icon(
           onPressed: onSignOut,
@@ -800,20 +1142,31 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title, this.onSignOut});
+  const _TopBar({
+    required this.title,
+    this.avatarUrl = '',
+    this.unreadCount = 0,
+    this.onNotifications,
+    this.onSignOut,
+  });
 
   final String title;
+  final String avatarUrl;
+  final int unreadCount;
+  final VoidCallback? onNotifications;
   final VoidCallback? onSignOut;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.menu),
-          visualDensity: VisualDensity.compact,
-        ),
+        avatarUrl.isEmpty
+            ? IconButton(
+                onPressed: onSignOut,
+                icon: const Icon(Icons.menu),
+                visualDensity: VisualDensity.compact,
+              )
+            : _ProfileAvatar(avatarUrl: avatarUrl, radius: 18),
         Expanded(
           child: Text(
             title,
@@ -821,12 +1174,59 @@ class _TopBar extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
         ),
-        IconButton(
-          onPressed: onSignOut,
-          icon: const Icon(Icons.notifications_none),
-          visualDensity: VisualDensity.compact,
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              onPressed: onNotifications,
+              icon: const Icon(Icons.notifications_none),
+              visualDensity: VisualDensity.compact,
+            ),
+            if (unreadCount > 0)
+              Positioned(
+                right: 6,
+                top: 4,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFD86B64),
+                    shape: BoxShape.circle,
+                  ),
+                  constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                  child: Text(
+                    unreadCount > 9 ? '9+' : '$unreadCount',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ],
+    );
+  }
+}
+
+class _ProfileAvatar extends StatelessWidget {
+  const _ProfileAvatar({required this.avatarUrl, required this.radius});
+
+  final String avatarUrl;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    final isRemote = avatarUrl.startsWith('http');
+
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: color.withValues(alpha: .14),
+      backgroundImage: isRemote ? NetworkImage(avatarUrl) : null,
+      child: isRemote ? null : Icon(Icons.eco, color: color, size: radius),
     );
   }
 }
@@ -1695,25 +2095,761 @@ class _MiniPill extends StatelessWidget {
 }
 
 class _ProfileAction extends StatelessWidget {
-  const _ProfileAction({required this.icon, required this.label});
+  const _ProfileAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   final IconData icon;
   final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(16),
+        decoration: _cardDecoration(radius: 20),
+        child: Row(
+          children: [
+            Icon(icon),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+            const Icon(Icons.chevron_right),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SavedProductsPreview extends StatelessWidget {
+  const _SavedProductsPreview({
+    required this.products,
+    required this.onOpenProduct,
+  });
+
+  final List<EcoProduct> products;
+  final ValueChanged<EcoProduct> onOpenProduct;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
-      decoration: _cardDecoration(radius: 20),
-      child: Row(
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+          Row(
+            children: [
+              Text(
+                'Saved Products',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const Spacer(),
+              Text('${products.length} saved'),
+            ],
           ),
-          const Icon(Icons.chevron_right),
+          const SizedBox(height: 12),
+          if (products.isEmpty)
+            Text(
+              'Tap the heart on products to save them here.',
+              style: TextStyle(color: Colors.grey[600]),
+            )
+          else
+            SizedBox(
+              height: 136,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: products.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (context, index) {
+                  final product = products[index];
+                  return SizedBox(
+                    width: 122,
+                    child: _SmallProductTile(
+                      product: product,
+                      onTap: () => onOpenProduct(product),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OrderPreferencesSummary extends StatelessWidget {
+  const _OrderPreferencesSummary({required this.preferences});
+
+  final OrderPreferences preferences;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Order Preferences',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            preferences.defaultAddress.isEmpty
+                ? 'No default address set'
+                : preferences.defaultAddress,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            preferences.preferPlasticFreePackaging
+                ? 'Plastic-free packaging preferred'
+                : 'Standard packaging allowed',
+            style: TextStyle(color: Colors.grey[600]),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NotificationsSheet extends StatelessWidget {
+  const _NotificationsSheet({
+    required this.notifications,
+    required this.onToggleRead,
+  });
+
+  final List<AppNotification> notifications;
+  final Future<void> Function(AppNotification notification, bool read)
+      onToggleRead;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Notifications',
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (notifications.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Text('No notifications yet.'),
+            )
+          else
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * .68,
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: notifications.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (context, index) {
+                  final notification = notifications[index];
+                  return Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: _cardDecoration(radius: 18),
+                    child: Row(
+                      children: [
+                        Icon(
+                          notification.read
+                              ? Icons.mark_email_read_outlined
+                              : Icons.mark_email_unread_outlined,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                notification.title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              Text(notification.body),
+                            ],
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            onToggleRead(notification, !notification.read);
+                          },
+                          child: Text(notification.read ? 'Unread' : 'Read'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class OrderSettingsScreen extends StatefulWidget {
+  const OrderSettingsScreen({
+    super.key,
+    required this.preferences,
+    required this.onSave,
+  });
+
+  final OrderPreferences preferences;
+  final Future<OrderPreferences> Function(OrderPreferences preferences) onSave;
+
+  @override
+  State<OrderSettingsScreen> createState() => _OrderSettingsScreenState();
+}
+
+class _OrderSettingsScreenState extends State<OrderSettingsScreen> {
+  late final TextEditingController _addressController;
+  late final TextEditingController _notesController;
+  late OrderPreferences _preferences;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _preferences = widget.preferences;
+    _addressController =
+        TextEditingController(text: widget.preferences.defaultAddress);
+    _notesController =
+        TextEditingController(text: widget.preferences.deliveryNotes);
+  }
+
+  @override
+  void dispose() {
+    _addressController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      final saved = await widget.onSave(
+        _preferences.copyWith(
+          defaultAddress: _addressController.text.trim(),
+          deliveryNotes: _notesController.text.trim(),
+        ),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(saved);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save order settings: $error')),
+      );
+      setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Order Settings')),
+      body: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          TextField(
+            controller: _addressController,
+            maxLines: 2,
+            decoration: const InputDecoration(
+              labelText: 'Default delivery address',
+              prefixIcon: Icon(Icons.location_on_outlined),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _notesController,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Delivery notes',
+              prefixIcon: Icon(Icons.notes_outlined),
+            ),
+          ),
+          const SizedBox(height: 14),
+          SwitchListTile(
+            value: _preferences.preferPlasticFreePackaging,
+            onChanged: (value) => setState(
+              () => _preferences =
+                  _preferences.copyWith(preferPlasticFreePackaging: value),
+            ),
+            title: const Text('Prefer plastic-free packaging'),
+          ),
+          SwitchListTile(
+            value: _preferences.allowSubstitutions,
+            onChanged: (value) => setState(
+              () => _preferences =
+                  _preferences.copyWith(allowSubstitutions: value),
+            ),
+            title: const Text('Allow sustainable substitutions'),
+          ),
+          SwitchListTile(
+            value: _preferences.carbonNeutralShipping,
+            onChanged: (value) => setState(
+              () => _preferences =
+                  _preferences.copyWith(carbonNeutralShipping: value),
+            ),
+            title: const Text('Use carbon-neutral shipping'),
+          ),
+          const SizedBox(height: 18),
+          FilledButton(
+            onPressed: _saving ? null : _save,
+            child: Text(_saving ? 'Saving...' : 'Save Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class HelpCenterScreen extends StatefulWidget {
+  const HelpCenterScreen({
+    super.key,
+    required this.email,
+    required this.onSubmit,
+  });
+
+  final String email;
+  final Future<void> Function(HelpIssue issue) onSubmit;
+
+  @override
+  State<HelpCenterScreen> createState() => _HelpCenterScreenState();
+}
+
+class _HelpCenterScreenState extends State<HelpCenterScreen> {
+  final _subjectController = TextEditingController();
+  final _messageController = TextEditingController();
+  late final TextEditingController _emailController;
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailController = TextEditingController(text: widget.email);
+  }
+
+  @override
+  void dispose() {
+    _subjectController.dispose();
+    _messageController.dispose();
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_subjectController.text.trim().isEmpty ||
+        _messageController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a subject and message.')),
+      );
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      await widget.onSubmit(
+        HelpIssue(
+          subject: _subjectController.text.trim(),
+          message: _messageController.text.trim(),
+          contactEmail: _emailController.text.trim(),
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Issue submitted to support.')),
+      );
+      _subjectController.clear();
+      _messageController.clear();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not submit issue: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Help Center')),
+      body: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          _HelpSection(
+            title: 'Contact Support',
+            child: const Text(
+              'Call support: 01747104029\nAvailable every day from 9 AM to 9 PM.',
+            ),
+          ),
+          _HelpSection(
+            title: 'FAQ',
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Q: How do I save a product?'),
+                Text('A: Tap the heart icon on any product card.'),
+                SizedBox(height: 8),
+                Text('Q: How is Eco Score calculated?'),
+                Text('A: It updates when you reduce waste, recycle, save food, or donate.'),
+                SizedBox(height: 8),
+                Text('Q: Can I update order preferences?'),
+                Text('A: Yes, open Profile > Order Settings.'),
+              ],
+            ),
+          ),
+          _HelpSection(
+            title: 'Live Support',
+            child: const Text(
+              'Live support is available by phone now. In-app chat can be connected later through Supabase Edge Functions or a support provider.',
+            ),
+          ),
+          _HelpSection(
+            title: 'Report Issue',
+            child: Column(
+              children: [
+                TextField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(labelText: 'Contact email'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _subjectController,
+                  decoration: const InputDecoration(labelText: 'Subject'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _messageController,
+                  maxLines: 4,
+                  decoration: const InputDecoration(labelText: 'Message'),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _submitting ? null : _submit,
+                    child: Text(_submitting ? 'Submitting...' : 'Submit Issue'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HelpSection extends StatelessWidget {
+  const _HelpSection({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _TrackerTotals extends StatelessWidget {
+  const _TrackerTotals({required this.impact});
+
+  final ImpactSnapshot impact;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 3,
+      crossAxisSpacing: 8,
+      mainAxisSpacing: 8,
+      childAspectRatio: .95,
+      children: [
+        _TotalTile(
+          label: 'Waste reduced',
+          value: '${impact.totalWasteReduced.toStringAsFixed(1)}kg',
+        ),
+        _TotalTile(
+          label: 'Recycled',
+          value: '${impact.totalRecycledItems}',
+        ),
+        _TotalTile(
+          label: 'Food saved',
+          value: '${impact.totalFoodSaved.toStringAsFixed(1)}kg',
+        ),
+      ],
+    );
+  }
+}
+
+class _TotalTile extends StatelessWidget {
+  const _TotalTile({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: _cardDecoration(radius: 18),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddWasteRecordCard extends StatefulWidget {
+  const _AddWasteRecordCard({required this.onAddRecord});
+
+  final ValueChanged<WasteRecord> onAddRecord;
+
+  @override
+  State<_AddWasteRecordCard> createState() => _AddWasteRecordCardState();
+}
+
+class _AddWasteRecordCardState extends State<_AddWasteRecordCard> {
+  final _amountController = TextEditingController();
+  final _noteController = TextEditingController();
+  String _type = 'reduced';
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final amount = double.tryParse(_amountController.text.trim());
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid amount.')),
+      );
+      return;
+    }
+    widget.onAddRecord(
+      WasteRecord(
+        id: '',
+        type: _type,
+        amount: amount,
+        unit: _type == 'recycled' || _type == 'donated' ? 'items' : 'kg',
+        note: _noteController.text.trim(),
+        createdAt: DateTime.now(),
+      ),
+    );
+    _amountController.clear();
+    _noteController.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Add Waste Tracker Record',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            value: _type,
+            decoration: const InputDecoration(labelText: 'Action type'),
+            items: const [
+              DropdownMenuItem(value: 'reduced', child: Text('Reduced waste')),
+              DropdownMenuItem(value: 'recycled', child: Text('Recycled items')),
+              DropdownMenuItem(value: 'food_saved', child: Text('Saved food')),
+              DropdownMenuItem(value: 'donated', child: Text('Donated products')),
+            ],
+            onChanged: (value) => setState(() => _type = value ?? _type),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _amountController,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: _type == 'recycled' || _type == 'donated'
+                  ? 'Amount (items)'
+                  : 'Amount (kg)',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _noteController,
+            decoration: const InputDecoration(labelText: 'Note'),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _submit,
+              icon: const Icon(Icons.add),
+              label: const Text('Add Record'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EcoScoreHistory extends StatelessWidget {
+  const _EcoScoreHistory({required this.impact, required this.history});
+
+  final ImpactSnapshot impact;
+  final List<EcoScoreEntry> history;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'Eco Score History',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              const Spacer(),
+              _MiniPill(label: impact.ranking),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 90,
+            child: _MiniBarChart(
+              values: impact.scoreHistory.isEmpty
+                  ? history.map((entry) => entry.score).toList()
+                  : impact.scoreHistory,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...history.take(3).map(
+                (entry) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.emoji_events_outlined),
+                  title: Text('${entry.score} points'),
+                  subtitle: Text(entry.reason),
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WasteRecordList extends StatelessWidget {
+  const _WasteRecordList({required this.records});
+
+  final List<WasteRecord> records;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Waste Records',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 10),
+          if (records.isEmpty)
+            Text(
+              'Add a record to start automatic monthly tracking.',
+              style: TextStyle(color: Colors.grey[600]),
+            )
+          else
+            ...records.take(5).map(
+                  (record) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(_activityIcon(record.type)),
+                    title: Text(_recordTitle(record.type)),
+                    subtitle: Text(record.note.isEmpty ? record.unit : record.note),
+                    trailing: Text('${record.amount.toStringAsFixed(1)} ${record.unit}'),
+                  ),
+                ),
         ],
       ),
     );
@@ -1783,7 +2919,21 @@ IconData _activityIcon(String iconName) {
     'bag' => Icons.shopping_bag_outlined,
     'bottle' => Icons.water_drop_outlined,
     'compost' => Icons.compost_outlined,
+    'donated' => Icons.volunteer_activism_outlined,
+    'food_saved' => Icons.restaurant_outlined,
+    'recycled' => Icons.recycling_outlined,
+    'reduced' => Icons.delete_sweep_outlined,
     _ => Icons.eco_outlined,
+  };
+}
+
+String _recordTitle(String type) {
+  return switch (type) {
+    'donated' => 'Donated products',
+    'food_saved' => 'Saved food',
+    'recycled' => 'Recycled items',
+    'reduced' => 'Reduced waste',
+    _ => 'Eco action',
   };
 }
 

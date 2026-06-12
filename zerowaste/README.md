@@ -16,6 +16,11 @@ brands, zero-waste products, and practical low-waste tips.
 - Supabase Auth integration for email/password accounts.
 - Supabase Postgres integration for brands, products, tips, and user favorites.
 - Supabase impact tracker table with a trigger that creates default user stats.
+- Supabase Storage profile photos with upload, update, delete, validation, and
+  per-user storage policies.
+- Saved products that persist in Supabase after logout/login.
+- Order settings, Help Center issue submission, realtime notifications, waste
+  records, automatic tracker totals, and Eco Score history.
 - Demo mode that works without Supabase keys for local UI development.
 - Database schema and seed data in [`supabase/schema.sql`](supabase/schema.sql).
 
@@ -56,10 +61,32 @@ The schema creates these tables:
 - `eco_tips`
 - `user_favorites`
 - `impact_snapshots`
+- `user_profiles`
+- `saved_products`
+- `order_preferences`
+- `support_issues`
+- `notifications`
+- `waste_records`
+- `eco_score_history`
 
 Row level security is enabled. Brands, products, and tips are readable by
 anonymous and authenticated users. Favorites and impact snapshots are private to
 the signed-in user.
+
+The schema also creates a public Supabase Storage bucket named
+`profile-photos`. Users can only upload, update, and delete files under their
+own user-id folder.
+
+Waste tracker records automatically recalculate:
+
+- total waste reduced
+- total recycled items
+- total food saved
+- weekly/monthly stats
+- Eco Score
+- ranking
+- Eco Score history
+- score notifications
 
 ## Main Flutter files
 
@@ -68,6 +95,8 @@ the signed-in user.
 - `lib/screens/home_screen.dart` contains the home, product, tracker,
   marketplace, profile, and product detail designs.
 - `lib/services/eco_repository.dart` contains Supabase queries and demo data.
+- `lib/models/` contains typed models for profile, notifications, order
+  settings, help issues, waste records, and Eco Score history.
 
 ## Tests and checks
 
