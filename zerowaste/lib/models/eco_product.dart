@@ -9,6 +9,13 @@ class EcoProduct {
     required this.impactLabel,
     required this.imageUrl,
     required this.tags,
+    required this.price,
+    required this.previousPrice,
+    required this.ecoScore,
+    required this.co2SavedKg,
+    required this.waterSavedLiters,
+    required this.material,
+    required this.shippingNote,
     required this.isFavorite,
   });
 
@@ -21,6 +28,13 @@ class EcoProduct {
   final String impactLabel;
   final String imageUrl;
   final List<String> tags;
+  final double price;
+  final double? previousPrice;
+  final int ecoScore;
+  final double co2SavedKg;
+  final int waterSavedLiters;
+  final String material;
+  final String shippingNote;
   final bool isFavorite;
 
   EcoProduct copyWith({bool? isFavorite}) {
@@ -34,6 +48,13 @@ class EcoProduct {
       impactLabel: impactLabel,
       imageUrl: imageUrl,
       tags: tags,
+      price: price,
+      previousPrice: previousPrice,
+      ecoScore: ecoScore,
+      co2SavedKg: co2SavedKg,
+      waterSavedLiters: waterSavedLiters,
+      material: material,
+      shippingNote: shippingNote,
       isFavorite: isFavorite ?? this.isFavorite,
     );
   }
@@ -56,6 +77,13 @@ class EcoProduct {
       impactLabel: map['impact_label'] as String? ?? 'Low waste',
       imageUrl: map['image_url'] as String? ?? '',
       tags: rawTags is List ? rawTags.map((tag) => '$tag').toList() : const [],
+      price: (map['price'] as num?)?.toDouble() ?? 0,
+      previousPrice: (map['previous_price'] as num?)?.toDouble(),
+      ecoScore: (map['eco_score'] as num?)?.toInt() ?? 0,
+      co2SavedKg: (map['co2_saved_kg'] as num?)?.toDouble() ?? 0,
+      waterSavedLiters: (map['water_saved_liters'] as num?)?.toInt() ?? 0,
+      material: map['material'] as String? ?? '',
+      shippingNote: map['shipping_note'] as String? ?? '',
       isFavorite: map['is_favorite'] as bool? ?? false,
     );
   }
