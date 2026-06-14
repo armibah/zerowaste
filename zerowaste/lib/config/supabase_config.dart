@@ -1,9 +1,8 @@
-const String supabaseUrl = 'https://your-project-ref.supabase.co';
-const String supabaseAnonKey = 'your-anon-key-here';
+class SupabaseConfig {
+  static const url = String.fromEnvironment('SUPABASE_URL');
+  static const anonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
-bool get isSupabaseConfigured {
-  return supabaseUrl.isNotEmpty &&
-      !supabaseUrl.contains('your-project-ref') &&
-      supabaseAnonKey.isNotEmpty &&
-      !supabaseAnonKey.contains('your-anon-key');
+  static bool get isConfigured {
+    return url.isNotEmpty && anonKey.isNotEmpty;
+  }
 }

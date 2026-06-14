@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
@@ -9,17 +9,19 @@ import 'services/eco_repository.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (isSupabaseConfigured) {
+  if (SupabaseConfig.isConfigured) {
     await Supabase.initialize(
-      url: 'https://donuunbpmzrohgtwquzi.supabase.co',
-      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRvbnV1bmJwbXpyb2hndHdxdXppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4MjQxNzcsImV4cCI6MjA5NjQwMDE3N30.vCvt0SZ2V4rZmYZ_jSj0Kq7kW1CbvT3yY0KyyLVIUS4',
+      url: SupabaseConfig.url,
+      anonKey: SupabaseConfig.anonKey,
     );
   }
 
-  runApp(
-    EcoDiscoverApp(
-      repository: DemoEcoRepository(),
-      authService: DemoAuthService(),
-    ),
-  );
+  final repository = SupabaseConfig.isConfigured
+      ? SupabaseEcoRepository(Supabase.instance.client)
+      : DemoEcoRepository();
+  final authService = SupabaseConfig.isConfigured
+      ? SupabaseAuthService(Supabase.instance.client)
+      : DemoAuthService();
+
+  runApp(EcoDiscoverApp(repository: repository, authService: authService));
 }
